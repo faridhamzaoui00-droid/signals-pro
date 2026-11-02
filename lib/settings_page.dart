@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'engine/datasource.dart';
 import 'l10n.dart';
+import 'l10n2.dart';
 
 const _card = Color(0xFF0A1A3F);
 const _line = Color(0xFF1F4FB5);
@@ -16,9 +17,8 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
-  final _storage = const FlutterSecureStorage();
   final _ctrl = TextEditingController();
-  bool hasSsid = false;
+  bool hasKey = false;
   bool hide = true;
 
   void _onLang() {
@@ -40,44 +40,36 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _load() async {
-    String? s;
-    try {
-      s = await _storage.read(key: 'ssid');
-    } catch (_) {
-      s = null;
-    }
+    final h = await DataSource.hasKey();
     if (!mounted) return;
-    setState(() => hasSsid = s != null && s.isNotEmpty);
+    setState(() => hasKey = h);
   }
 
   void _msg(String t) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t)));
   }
 
-  Future<void> _saveSsid() async {
+  Future<void> _save() async {
     final v = _ctrl.text.trim();
     if (v.isEmpty) {
       _msg(tr('ssid_paste_first'));
       return;
     }
-    try {
-      await _storage.write(key: 'ssid', value: v);
-    } catch (_) {
+    final ok = await DataSource.saveKey(v);
+    if (!mounted) return;
+    if (!ok) {
       _msg(tr('ssid_fail'));
       return;
     }
     _ctrl.clear();
-    if (!mounted) return;
-    setState(() => hasSsid = true);
+    setState(() => hasKey = true);
     _msg(tr('ssid_ok'));
   }
 
-  Future<void> _deleteSsid() async {
-    try {
-      await _storage.delete(key: 'ssid');
-    } catch (_) {}
+  Future<void> _delete() async {
+    await DataSource.deleteKey();
     if (!mounted) return;
-    setState(() => hasSsid = false);
+    setState(() => hasKey = false);
     _msg(tr('ssid_deleted'));
   }
 
@@ -95,8 +87,11 @@ class _SettingsPageState extends State<SettingsPage> {
         Row(children: [
           Icon(icon, color: _blue, size: 26),
           const SizedBox(width: 8),
-          Text(title,
-              style: const TextStyle(fontSize: 19, fontWeight: FontWeight.bold)),
+          Expanded(
+            child: Text(title,
+                style:
+                    const TextStyle(fontSize: 19, fontWeight: FontWeight.bold)),
+          ),
         ]),
         const SizedBox(height: 10),
         ...children,
@@ -118,6 +113,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final sc = hasKey ? _green : _amber;
     return ListView(
       padding: const EdgeInsets.fromLTRB(14, 16, 14, 16),
       children: [
@@ -129,17 +125,21 @@ class _SettingsPageState extends State<SettingsPage> {
           _langTile('fr', 'Français'),
           _langTile('en', 'English'),
         ]),
-        _section(tr('data_source'), Icons.sensors, [
+        _section(t2('key_title'), Icons.sensors, [
           Row(children: [
-            const Icon(Icons.gpp_maybe, color: _amber, size: 22),
+            Icon(hasKey ? Icons.verified_user : Icons.gpp_maybe,
+                color: sc, size: 22),
             const SizedBox(width: 6),
-            Text('${tr('ds_status')}: ${tr('disconnected')}',
-                style: const TextStyle(color: _amber, fontSize: 16)),
+            Expanded(
+              child: Text(
+                  '${tr('ds_status')}: ${hasKey ? t2('src_ready') : t2('src_nokey')}',
+                  style: TextStyle(color: sc, fontSize: 16)),
+            ),
           ]),
           const SizedBox(height: 6),
-          Text(hasSsid ? tr('ssid_saved') : tr('ssid_missing'),
+          Text(hasKey ? t2('key_saved') : t2('key_missing'),
               style: TextStyle(
-                  fontSize: 14, color: hasSsid ? _green : Colors.white70)),
+                  fontSize: 14, color: hasKey ? _green : Colors.white70)),
           const SizedBox(height: 10),
           TextField(
             controller: _ctrl,
@@ -147,7 +147,7 @@ class _SettingsPageState extends State<SettingsPage> {
             autocorrect: false,
             enableSuggestions: false,
             decoration: InputDecoration(
-              hintText: tr('ssid_hint'),
+              hintText: t2('key_hint'),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
               suffixIcon: IconButton(
                 icon: Icon(hide ? Icons.visibility : Icons.visibility_off),
@@ -159,7 +159,7 @@ class _SettingsPageState extends State<SettingsPage> {
           Row(children: [
             Expanded(
               child: ElevatedButton(
-                onPressed: _saveSsid,
+                onPressed: _save,
                 style: ElevatedButton.styleFrom(
                     backgroundColor: _blue,
                     foregroundColor: Colors.white,
@@ -170,7 +170,7 @@ class _SettingsPageState extends State<SettingsPage> {
             const SizedBox(width: 10),
             Expanded(
               child: OutlinedButton(
-                onPressed: hasSsid ? _deleteSsid : null,
+                onPressed: hasKey ? _delete : null,
                 style: OutlinedButton.styleFrom(
                     foregroundColor: _red,
                     padding: const EdgeInsets.symmetric(vertical: 14)),
@@ -180,6 +180,9 @@ class _SettingsPageState extends State<SettingsPage> {
           ]),
           const SizedBox(height: 8),
           Text(tr('ssid_note'),
+              style: const TextStyle(fontSize: 12, color: Colors.white54)),
+          const SizedBox(height: 6),
+          Text(t2('key_help'),
               style: const TextStyle(fontSize: 12, color: Colors.white54)),
         ]),
         _section(tr('ver_title'), Icons.info_outline, [
