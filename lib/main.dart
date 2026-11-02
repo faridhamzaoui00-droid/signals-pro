@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'l10n.dart';
 import 'settings_page.dart';
 import 'history_page.dart';
+import 'info_page.dart';
 
 const kBg1 = Color(0xFF030A1F);
 const kBg2 = Color(0xFF07163F);
@@ -123,7 +124,7 @@ class _ShellState extends State<Shell> {
       HomePage(onSettings: () => go(2)),
       const HistoryPage(),
       const SettingsPage(),
-      _Soon(tr('nav_info')),
+      const InfoPage(),
     ];
     return Scaffold(
       body: Container(
@@ -207,13 +208,6 @@ class _ShellState extends State<Shell> {
       ),
     );
   }
-}
-
-class _Soon extends StatelessWidget {
-  final String name;
-  const _Soon(this.name);
-  @override
-  Widget build(BuildContext context) => Center(child: Text(name));
 }
 
 class HomePage extends StatefulWidget {
