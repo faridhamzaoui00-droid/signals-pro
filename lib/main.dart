@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'settings_page.dart';
+import 'history_page.dart';
 
 const kBg1 = Color(0xFF030A1F);
 const kBg2 = Color(0xFF07163F);
@@ -95,7 +96,7 @@ class _ShellState extends State<Shell> {
   Widget build(BuildContext context) {
     final pages = <Widget>[
       HomePage(onSettings: () => go(2)),
-      const _Soon('السجل'),
+      const HistoryPage(),
       const SettingsPage(),
       const _Soon('معلومات'),
     ];
