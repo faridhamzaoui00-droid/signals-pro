@@ -29,7 +29,7 @@ Color tcolor(String t) {
 Color dark(Color c, double k) => Color.lerp(Colors.black, c, k)!;
 
 class Analysis {
-  final String type; // UP DOWN WAIT NA
+  final String type;
   final int score;
   final double? winRate;
   final Map<String, String> tf;
@@ -113,6 +113,7 @@ class _ShellState extends State<Shell> {
 
   Widget _navItem(int i, IconData icon, String label) {
     final sel = tab == i;
+    final double pad = sel ? 8 : 4;
     return Expanded(
       child: InkWell(
         onTap: () => go(i),
@@ -129,7 +130,7 @@ class _ShellState extends State<Shell> {
               : null,
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Container(
-              padding: const EdgeInsets.all(sel ? 8 : 4),
+              padding: EdgeInsets.all(pad),
               decoration: sel
                   ? BoxDecoration(
                       shape: BoxShape.circle,
@@ -279,7 +280,6 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  // ---------- عناصر مشتركة ----------
   BoxDecoration _glass(Color border, {double r = 18}) => BoxDecoration(
         borderRadius: BorderRadius.circular(r),
         border: Border.all(color: border.withOpacity(0.7), width: 1.2),
@@ -491,40 +491,39 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // ---------- بطاقة الإشارة ----------
   Widget _signalCard(Analysis? a) {
     final t = a?.type ?? 'NONE';
     final c = tcolor(t);
     final arrow = t == 'UP' || t == 'DOWN';
-    String badge, main, big, chip;
-    switch (t) {
-      case 'UP':
-      case 'DOWN':
-        final sc = a!.score;
-        badge = sc >= 10 ? 'توافق ممتاز' : (sc == 9 ? 'إشارة قوية جداً' : 'إشارة قوية');
-        main = t == 'UP' ? 'UP – صاعد' : 'DOWN – هابط';
-        big = a.winRate != null ? '${a.winRate!.round()}%' : '—';
-        chip = a.winRate != null
-            ? 'نسبة النجاح التاريخية'
-            : 'بيانات غير كافية لنسبة النجاح';
-        break;
-      case 'WAIT':
-        badge = 'لا توجد فرصة';
-        main = 'WAIT – انتظر';
-        big = '—';
-        chip = a!.reason;
-        break;
-      case 'NA':
-        badge = 'بيانات غير متاحة';
-        main = 'DATA UNAVAILABLE';
-        big = '—';
-        chip = a!.reason;
-        break;
-      default:
-        badge = 'جاهز';
-        main = 'بانتظار التحليل';
-        big = '—';
-        chip = 'اختر الزوج ثم اضغط تحليل';
+    String badge;
+    String main;
+    String big;
+    String chip;
+    if (arrow) {
+      final sc = a!.score;
+      badge = sc >= 10
+          ? 'توافق ممتاز'
+          : (sc == 9 ? 'إشارة قوية جداً' : 'إشارة قوية');
+      main = t == 'UP' ? 'UP – صاعد' : 'DOWN – هابط';
+      big = a.winRate != null ? '${a.winRate!.round()}%' : '—';
+      chip = a.winRate != null
+          ? 'نسبة النجاح التاريخية'
+          : 'بيانات غير كافية لنسبة النجاح';
+    } else if (t == 'WAIT') {
+      badge = 'لا توجد فرصة';
+      main = 'WAIT – انتظر';
+      big = '—';
+      chip = a!.reason;
+    } else if (t == 'NA') {
+      badge = 'بيانات غير متاحة';
+      main = 'DATA UNAVAILABLE';
+      big = '—';
+      chip = a!.reason;
+    } else {
+      badge = 'جاهز';
+      main = 'بانتظار التحليل';
+      big = '—';
+      chip = 'اختر الزوج ثم اضغط تحليل';
     }
     return LayoutBuilder(builder: (ctx, cons) {
       final s = cons.maxWidth / 960;
@@ -597,8 +596,7 @@ class _HomePageState extends State<HomePage> {
                                     fontWeight: FontWeight.bold,
                                     fontSize: 36 * s)),
                             SizedBox(width: 8 * s),
-                            Icon(Icons.check_circle,
-                                color: c, size: 44 * s),
+                            Icon(Icons.check_circle, color: c, size: 44 * s),
                           ]),
                         ),
                       ),
@@ -647,7 +645,6 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  // ---------- تفاصيل التحليل ----------
   Widget _tfCell(String name, String v) {
     final up = v == 'UP', down = v == 'DOWN';
     final c = up ? kGreen : (down ? kRed : kGrey);
@@ -702,9 +699,13 @@ class _HomePageState extends State<HomePage> {
       );
 
   Widget _details(Analysis? a) {
-    final real = a != null && (a.type == 'UP' || a.type == 'DOWN' || a.type == 'WAIT');
+    final real =
+        a != null && (a.type == 'UP' || a.type == 'DOWN' || a.type == 'WAIT');
     final stUp = a?.st == 'UP';
     final stDown = a?.st == 'DOWN';
+    final adxTxt = a?.adx != null ? a!.adx!.toStringAsFixed(1) : '—';
+    final rsiTxt = a?.rsi != null ? a!.rsi!.toStringAsFixed(1) : '—';
+    final scoreTxt = real ? '${a.score}/10' : '—';
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: _glass(kLine, r: 22),
@@ -729,12 +730,10 @@ class _HomePageState extends State<HomePage> {
             ])),
             const SizedBox(height: 8),
             _box(Row(children: [
-              _metric(Icons.star, kAmber, 'التقييم',
-                  real ? '${a!.score}/10' : '—', kAmber),
-              _metric(Icons.verified_user_outlined, kGreen, 'ADX',
-                  a?.adx != null ? a!.adx!.toStringAsFixed(1) : '—', Colors.white),
-              _metric(Icons.show_chart, kCyan, 'RSI',
-                  a?.rsi != null ? a!.rsi!.toStringAsFixed(1) : '—', Colors.white),
+              _metric(Icons.star, kAmber, 'التقييم', scoreTxt, kAmber),
+              _metric(Icons.verified_user_outlined, kGreen, 'ADX', adxTxt,
+                  Colors.white),
+              _metric(Icons.show_chart, kCyan, 'RSI', rsiTxt, Colors.white),
               _metric(
                   Icons.multiline_chart,
                   kBlue,
