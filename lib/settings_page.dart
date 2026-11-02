@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'l10n.dart';
 
 const _card = Color(0xFF0A1A3F);
 const _line = Color(0xFF1F4FB5);
@@ -18,24 +18,28 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   final _storage = const FlutterSecureStorage();
   final _ctrl = TextEditingController();
-  String lang = 'ar';
   bool hasSsid = false;
   bool hide = true;
+
+  void _onLang() {
+    if (mounted) setState(() {});
+  }
 
   @override
   void initState() {
     super.initState();
+    langNotifier.addListener(_onLang);
     _load();
   }
 
   @override
   void dispose() {
+    langNotifier.removeListener(_onLang);
     _ctrl.dispose();
     super.dispose();
   }
 
   Future<void> _load() async {
-    final p = await SharedPreferences.getInstance();
     String? s;
     try {
       s = await _storage.read(key: 'ssid');
@@ -43,17 +47,7 @@ class _SettingsPageState extends State<SettingsPage> {
       s = null;
     }
     if (!mounted) return;
-    setState(() {
-      lang = p.getString('lang') ?? 'ar';
-      hasSsid = s != null && s.isNotEmpty;
-    });
-  }
-
-  Future<void> _setLang(String l) async {
-    final p = await SharedPreferences.getInstance();
-    await p.setString('lang', l);
-    if (!mounted) return;
-    setState(() => lang = l);
+    setState(() => hasSsid = s != null && s.isNotEmpty);
   }
 
   void _msg(String t) {
@@ -63,19 +57,19 @@ class _SettingsPageState extends State<SettingsPage> {
   Future<void> _saveSsid() async {
     final v = _ctrl.text.trim();
     if (v.isEmpty) {
-      _msg('الصق المفتاح أولاً');
+      _msg(tr('ssid_paste_first'));
       return;
     }
     try {
       await _storage.write(key: 'ssid', value: v);
     } catch (_) {
-      _msg('تعذر الحفظ على هذا الجهاز');
+      _msg(tr('ssid_fail'));
       return;
     }
     _ctrl.clear();
     if (!mounted) return;
     setState(() => hasSsid = true);
-    _msg('تم حفظ المفتاح مشفراً على هذا الجهاز');
+    _msg(tr('ssid_ok'));
   }
 
   Future<void> _deleteSsid() async {
@@ -84,7 +78,7 @@ class _SettingsPageState extends State<SettingsPage> {
     } catch (_) {}
     if (!mounted) return;
     setState(() => hasSsid = false);
-    _msg('تم حذف المفتاح');
+    _msg(tr('ssid_deleted'));
   }
 
   Widget _section(String title, IconData icon, List<Widget> children) {
@@ -111,14 +105,14 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Widget _langTile(String code, String label) {
-    final sel = lang == code;
+    final sel = langNotifier.value == code;
     return ListTile(
       contentPadding: EdgeInsets.zero,
       title: Text(label, style: const TextStyle(fontSize: 17)),
       trailing: sel
           ? const Icon(Icons.check_circle, color: _green)
           : const Icon(Icons.circle_outlined, color: Colors.white38),
-      onTap: () => _setLang(code),
+      onTap: () => saveLang(code),
     );
   }
 
@@ -127,28 +121,23 @@ class _SettingsPageState extends State<SettingsPage> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(14, 16, 14, 16),
       children: [
-        const Text('الإعدادات',
-            style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
+        Text(tr('settings_title'),
+            style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
         const SizedBox(height: 14),
-        _section('اللغة', Icons.language, [
+        _section(tr('lang_title'), Icons.language, [
           _langTile('ar', 'العربية'),
           _langTile('fr', 'Français'),
           _langTile('en', 'English'),
-          const Text('ترجمة كل عناصر التطبيق تُضاف في خطوة لاحقة.',
-              style: TextStyle(fontSize: 12, color: Colors.white54)),
         ]),
-        _section('مصدر البيانات', Icons.sensors, [
-          Row(children: const [
-            Icon(Icons.gpp_maybe, color: _amber, size: 22),
-            SizedBox(width: 6),
-            Text('الحالة: غير متصل',
-                style: TextStyle(color: _amber, fontSize: 16)),
+        _section(tr('data_source'), Icons.sensors, [
+          Row(children: [
+            const Icon(Icons.gpp_maybe, color: _amber, size: 22),
+            const SizedBox(width: 6),
+            Text('${tr('ds_status')}: ${tr('disconnected')}',
+                style: const TextStyle(color: _amber, fontSize: 16)),
           ]),
           const SizedBox(height: 6),
-          Text(
-              hasSsid
-                  ? 'مفتاح الجلسة (SSID): محفوظ مشفراً على هذا الجهاز'
-                  : 'مفتاح الجلسة (SSID): غير محفوظ',
+          Text(hasSsid ? tr('ssid_saved') : tr('ssid_missing'),
               style: TextStyle(
                   fontSize: 14, color: hasSsid ? _green : Colors.white70)),
           const SizedBox(height: 10),
@@ -158,7 +147,7 @@ class _SettingsPageState extends State<SettingsPage> {
             autocorrect: false,
             enableSuggestions: false,
             decoration: InputDecoration(
-              hintText: 'الصق مفتاح الجلسة هنا',
+              hintText: tr('ssid_hint'),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
               suffixIcon: IconButton(
                 icon: Icon(hide ? Icons.visibility : Icons.visibility_off),
@@ -175,7 +164,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     backgroundColor: _blue,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14)),
-                child: const Text('حفظ المفتاح'),
+                child: Text(tr('ssid_save')),
               ),
             ),
             const SizedBox(width: 10),
@@ -185,20 +174,19 @@ class _SettingsPageState extends State<SettingsPage> {
                 style: OutlinedButton.styleFrom(
                     foregroundColor: _red,
                     padding: const EdgeInsets.symmetric(vertical: 14)),
-                child: const Text('حذف المفتاح'),
+                child: Text(tr('ssid_delete')),
               ),
             ),
           ]),
           const SizedBox(height: 8),
-          const Text(
-              'لا ترسل هذا المفتاح لأحد. يبقى على هاتفك فقط ولا يُكتب في الكود.',
-              style: TextStyle(fontSize: 12, color: Colors.white54)),
+          Text(tr('ssid_note'),
+              style: const TextStyle(fontSize: 12, color: Colors.white54)),
         ]),
-        _section('معلومات الإصدار', Icons.info_outline, [
+        _section(tr('ver_title'), Icons.info_outline, [
           const Text('Farid Hamzaoui Signals Pro',
               style: TextStyle(fontSize: 16)),
           const SizedBox(height: 4),
-          const Text('الإصدار 1.0.0', style: TextStyle(color: Colors.white70)),
+          Text(tr('ver_number'), style: const TextStyle(color: Colors.white70)),
         ]),
       ],
     );
