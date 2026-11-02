@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'l10n.dart';
 import 'settings_page.dart';
 import 'history_page.dart';
 
@@ -13,7 +14,11 @@ const kAmber = Color(0xFFFFB020);
 const kCyan = Color(0xFF28D7E8);
 const kGrey = Color(0xFF7C8BA8);
 
-void main() => runApp(const SignalsApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await loadLang();
+  runApp(const SignalsApp());
+}
 
 Color tcolor(String t) {
   switch (t) {
@@ -60,8 +65,8 @@ const kSample = Analysis(
   adx: 32.5,
   rsi: 64.8,
   st: 'UP',
-  sr: 'منطقة دعم قوية',
-  reason: 'ارتداد من الدعم + توافق المؤشرات',
+  sr: 'sample_sr',
+  reason: 'sample_reason',
   sample: true,
 );
 
@@ -75,7 +80,11 @@ class SignalsApp extends StatelessWidget {
       theme: ThemeData.dark().copyWith(scaffoldBackgroundColor: kBg1),
       builder: (c, child) => MediaQuery(
         data: MediaQuery.of(c).copyWith(textScaler: TextScaler.noScaling),
-        child: Directionality(textDirection: TextDirection.rtl, child: child!),
+        child: ValueListenableBuilder<String>(
+          valueListenable: langNotifier,
+          builder: (_, l, __) =>
+              Directionality(textDirection: dirFor(l), child: child!),
+        ),
       ),
       home: const Shell(),
     );
@@ -92,13 +101,29 @@ class _ShellState extends State<Shell> {
   int tab = 0;
   void go(int i) => setState(() => tab = i);
 
+  void _onLang() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    langNotifier.addListener(_onLang);
+  }
+
+  @override
+  void dispose() {
+    langNotifier.removeListener(_onLang);
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final pages = <Widget>[
       HomePage(onSettings: () => go(2)),
       const HistoryPage(),
       const SettingsPage(),
-      const _Soon('معلومات'),
+      _Soon(tr('nav_info')),
     ];
     return Scaffold(
       body: Container(
@@ -148,11 +173,14 @@ class _ShellState extends State<Shell> {
                   size: 28, color: sel ? Colors.white : const Color(0xFF8FB0E8)),
             ),
             const SizedBox(height: 2),
-            Text(label,
-                style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: sel ? FontWeight.bold : FontWeight.normal,
-                    color: sel ? kCyan : const Color(0xFF8FB0E8))),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(label,
+                  style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: sel ? FontWeight.bold : FontWeight.normal,
+                      color: sel ? kCyan : const Color(0xFF8FB0E8))),
+            ),
           ]),
         ),
       ),
@@ -170,10 +198,10 @@ class _ShellState extends State<Shell> {
         child: Directionality(
           textDirection: TextDirection.ltr,
           child: Row(children: [
-            _navItem(1, Icons.bar_chart, 'السجل'),
-            _navItem(2, Icons.settings, 'الإعدادات'),
-            _navItem(0, Icons.home, 'الرئيسية'),
-            _navItem(3, Icons.info_outline, 'معلومات'),
+            _navItem(1, Icons.bar_chart, tr('nav_history')),
+            _navItem(2, Icons.settings, tr('nav_settings')),
+            _navItem(0, Icons.home, tr('nav_home')),
+            _navItem(3, Icons.info_outline, tr('nav_info')),
           ]),
         ),
       ),
@@ -185,8 +213,7 @@ class _Soon extends StatelessWidget {
   final String name;
   const _Soon(this.name);
   @override
-  Widget build(BuildContext context) =>
-      Center(child: Text('صفحة $name تُضاف في خطوة قادمة'));
+  Widget build(BuildContext context) => Center(child: Text(name));
 }
 
 class HomePage extends StatefulWidget {
@@ -198,11 +225,9 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   static const durations = [
-    '30 ثانية', '1 دقيقة', '2 دقيقة', '3 دقائق', '4 دقائق', '5 دقائق',
-    '6 دقائق', '7 دقائق', '8 دقائق', '9 دقائق', '10 دقائق', '11 دقيقة',
-    '12 دقيقة', '13 دقيقة', '14 دقيقة', '15 دقيقة',
+    30, 60, 120, 180, 240, 300, 360, 420, 480, 540, 600, 660, 720, 780, 840, 900,
   ];
-  String duration = '5 دقائق';
+  int duration = 300;
   String? pair;
   bool loading = false;
   bool preview = false;
@@ -210,8 +235,25 @@ class _HomePageState extends State<HomePage> {
   String updated = '--:--:--';
   Analysis? current;
 
-  String get market =>
-      pair == null ? '—' : (pair!.contains('OTC') ? 'OTC' : 'السوق العادي');
+  void _onLang() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    langNotifier.addListener(_onLang);
+  }
+
+  @override
+  void dispose() {
+    langNotifier.removeListener(_onLang);
+    super.dispose();
+  }
+
+  String get market => pair == null
+      ? '—'
+      : (pair!.contains('OTC') ? 'OTC' : tr('market_regular'));
 
   String _now() {
     final n = DateTime.now();
@@ -238,10 +280,9 @@ class _HomePageState extends State<HomePage> {
     showModalBottomSheet(
       context: context,
       backgroundColor: kCard,
-      builder: (_) => const Padding(
-        padding: EdgeInsets.all(24),
-        child: Text('قائمة الأزواج تُجلب من مصدر البيانات، وهو غير متصل بعد. '
-            'لن تظهر أزواج غير مدعومة.'),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: Text(tr('pairs_unavailable')),
       ),
     );
   }
@@ -253,7 +294,7 @@ class _HomePageState extends State<HomePage> {
       builder: (_) => ListView(children: [
         for (final d in durations)
           ListTile(
-            title: Text(d),
+            title: Text(durText(d)),
             trailing:
                 d == duration ? const Icon(Icons.check, color: kGreen) : null,
             onTap: () {
@@ -269,18 +310,18 @@ class _HomePageState extends State<HomePage> {
     if (loading) return;
     if (pair == null) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('اختر زوج التداول أولاً')));
+          .showSnackBar(SnackBar(content: Text(tr('pick_pair_first'))));
       return;
     }
     setState(() => loading = true);
     await Future.delayed(const Duration(seconds: 1));
+    if (!mounted) return;
     setState(() {
       loading = false;
       updated = _now();
       current = preview
           ? kSample
-          : const Analysis(
-              type: 'NA', reason: 'مصدر البيانات غير متصل، لا توجد إشارة');
+          : const Analysis(type: 'NA', reason: 'na_reason');
     });
   }
 
@@ -320,11 +361,11 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
             const SizedBox(height: 2),
-            const FittedBox(
+            FittedBox(
               fit: BoxFit.scaleDown,
               alignment: Alignment.centerLeft,
-              child: Text('تحليل ذكي .. قرارات أدق .. فرص أفضل',
-                  style: TextStyle(fontSize: 13, color: Colors.white70)),
+              child: Text(tr('tagline'),
+                  style: const TextStyle(fontSize: 13, color: Colors.white70)),
             ),
           ]),
         ),
@@ -363,17 +404,18 @@ class _HomePageState extends State<HomePage> {
                       FittedBox(
                         fit: BoxFit.scaleDown,
                         alignment: Alignment.centerLeft,
-                        child: Text(connected ? 'متصل' : 'غير متصل',
+                        child: Text(
+                            connected ? tr('connected') : tr('disconnected'),
                             style: TextStyle(
                                 color: c,
                                 fontSize: 17,
                                 fontWeight: FontWeight.bold)),
                       ),
-                      const FittedBox(
+                      FittedBox(
                         fit: BoxFit.scaleDown,
                         alignment: Alignment.centerLeft,
-                        child: Text('مصدر البيانات',
-                            style: TextStyle(
+                        child: Text(tr('data_source'),
+                            style: const TextStyle(
                                 fontSize: 12, color: Colors.white70)),
                       ),
                     ]),
@@ -395,10 +437,11 @@ class _HomePageState extends State<HomePage> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const FittedBox(
+                      FittedBox(
                         fit: BoxFit.scaleDown,
                         alignment: Alignment.centerLeft,
-                        child: Text('آخر تحديث', style: TextStyle(fontSize: 13)),
+                        child: Text(tr('last_update'),
+                            style: const TextStyle(fontSize: 13)),
                       ),
                       FittedBox(
                         fit: BoxFit.scaleDown,
@@ -449,7 +492,7 @@ class _HomePageState extends State<HomePage> {
           padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: _glass(kLine),
           child: Directionality(
-            textDirection: TextDirection.ltr,
+            textDirection: dirFor(langNotifier.value),
             child: Row(children: [
               Icon(icon, size: 34, color: kGreen),
               const SizedBox(width: 10),
@@ -458,12 +501,16 @@ class _HomePageState extends State<HomePage> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(label,
-                          style: const TextStyle(
-                              fontSize: 13, color: Colors.white70)),
                       FittedBox(
                         fit: BoxFit.scaleDown,
-                        alignment: Alignment.centerLeft,
+                        alignment: AlignmentDirectional.centerStart,
+                        child: Text(label,
+                            style: const TextStyle(
+                                fontSize: 13, color: Colors.white70)),
+                      ),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: AlignmentDirectional.centerStart,
                         child: Text(value,
                             style: const TextStyle(
                                 fontSize: 19, fontWeight: FontWeight.bold)),
@@ -502,11 +549,16 @@ class _HomePageState extends State<HomePage> {
                 textDirection: TextDirection.ltr,
                 child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                   const Icon(Icons.query_stats, size: 36, color: Colors.white),
-                  const SizedBox(width: 14),
-                  const Text('تحليل الآن',
-                      style:
-                          TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
-                  const SizedBox(width: 14),
+                  const SizedBox(width: 12),
+                  Flexible(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(tr('analyze_now'),
+                          style: const TextStyle(
+                              fontSize: 28, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
                   Icon(Icons.keyboard_double_arrow_left,
                       size: 36, color: Colors.white.withOpacity(0.9)),
                 ]),
@@ -526,28 +578,26 @@ class _HomePageState extends State<HomePage> {
     if (arrow) {
       final sc = a!.score;
       badge = sc >= 10
-          ? 'توافق ممتاز'
-          : (sc == 9 ? 'إشارة قوية جداً' : 'إشارة قوية');
-      main = t == 'UP' ? 'UP – صاعد' : 'DOWN – هابط';
+          ? tr('badge_excellent')
+          : (sc == 9 ? tr('badge_vstrong') : tr('badge_strong'));
+      main = t == 'UP' ? tr('main_up') : tr('main_down');
       big = a.winRate != null ? '${a.winRate!.round()}%' : '—';
-      chip = a.winRate != null
-          ? 'نسبة النجاح التاريخية'
-          : 'بيانات غير كافية لنسبة النجاح';
+      chip = a.winRate != null ? tr('chip_rate') : tr('chip_nodata');
     } else if (t == 'WAIT') {
-      badge = 'لا توجد فرصة';
-      main = 'WAIT – انتظر';
+      badge = tr('badge_wait');
+      main = tr('main_wait');
       big = '—';
-      chip = a!.reason;
+      chip = tr(a!.reason);
     } else if (t == 'NA') {
-      badge = 'بيانات غير متاحة';
+      badge = tr('badge_na');
       main = 'DATA UNAVAILABLE';
       big = '—';
-      chip = a!.reason;
+      chip = tr(a!.reason);
     } else {
-      badge = 'جاهز';
-      main = 'بانتظار التحليل';
+      badge = tr('badge_ready');
+      main = tr('main_none');
       big = '—';
-      chip = 'اختر الزوج ثم اضغط تحليل';
+      chip = tr('chip_pick');
     }
     return LayoutBuilder(builder: (ctx, cons) {
       final s = cons.maxWidth / 960;
@@ -672,9 +722,9 @@ class _HomePageState extends State<HomePage> {
   Widget _tfCell(String name, String v) {
     final up = v == 'UP', down = v == 'DOWN';
     final c = up ? kGreen : (down ? kRed : kGrey);
-    String txt = up ? 'صاعد' : (down ? 'هابط' : '—');
-    if (name == 'M1' && up) txt = 'تأكيد شراء';
-    if (name == 'M1' && down) txt = 'تأكيد بيع';
+    String txt = up ? tr('tf_up') : (down ? tr('tf_down') : '—');
+    if (name == 'M1' && up) txt = tr('tf_buy');
+    if (name == 'M1' && down) txt = tr('tf_sell');
     return Expanded(
       child: Column(children: [
         Text(name,
@@ -741,12 +791,13 @@ class _HomePageState extends State<HomePage> {
       decoration: _glass(kLine, r: 22),
       child: Column(children: [
         Align(
-          alignment: Alignment.centerRight,
-          child: Row(mainAxisSize: MainAxisSize.min, children: const [
-            Icon(Icons.bar_chart, color: kBlue, size: 28),
-            SizedBox(width: 8),
-            Text('تفاصيل التحليل',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+          alignment: AlignmentDirectional.centerStart,
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            const Icon(Icons.bar_chart, color: kBlue, size: 28),
+            const SizedBox(width: 8),
+            Text(tr('details_title'),
+                style:
+                    const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
           ]),
         ),
         const SizedBox(height: 10),
@@ -760,7 +811,7 @@ class _HomePageState extends State<HomePage> {
             ])),
             const SizedBox(height: 8),
             _box(Row(children: [
-              _metric(Icons.star, kAmber, 'التقييم', scoreTxt, kAmber),
+              _metric(Icons.star, kAmber, tr('m_score'), scoreTxt, kAmber),
               _metric(Icons.verified_user_outlined, kGreen, 'ADX', adxTxt,
                   Colors.white),
               _metric(Icons.show_chart, kCyan, 'RSI', rsiTxt, Colors.white),
@@ -768,20 +819,23 @@ class _HomePageState extends State<HomePage> {
                   Icons.multiline_chart,
                   kBlue,
                   'SuperTrend',
-                  stUp ? 'صاعد' : (stDown ? 'هابط' : '—'),
+                  stUp ? tr('tf_up') : (stDown ? tr('tf_down') : '—'),
                   stUp ? kGreen : (stDown ? kRed : Colors.white)),
             ])),
             const SizedBox(height: 8),
             _box(Row(children: [
               Expanded(
                 child: Column(children: [
-                  Row(mainAxisAlignment: MainAxisAlignment.center, children: const [
-                    Icon(Icons.grid_view, color: kCyan, size: 20),
-                    SizedBox(width: 6),
-                    Text('الدعم والمقاومة', style: TextStyle(fontSize: 14)),
+                  Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    const Icon(Icons.grid_view, color: kCyan, size: 20),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(tr('sr_label'),
+                          style: const TextStyle(fontSize: 14)),
+                    ),
                   ]),
                   const SizedBox(height: 4),
-                  Text(a?.sr ?? '—',
+                  Text(tr(a?.sr ?? '—'),
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                           color: kCyan,
@@ -792,9 +846,10 @@ class _HomePageState extends State<HomePage> {
               Container(width: 1, height: 50, color: kLine.withOpacity(0.5)),
               Expanded(
                 child: Column(children: [
-                  const Text('السبب الرئيسي', style: TextStyle(fontSize: 14)),
+                  Text(tr('main_reason'),
+                      style: const TextStyle(fontSize: 14)),
                   const SizedBox(height: 4),
-                  Text(a?.reason ?? '—',
+                  Text(tr(a?.reason ?? '—'),
                       textAlign: TextAlign.center,
                       style: const TextStyle(fontSize: 14)),
                 ]),
@@ -813,16 +868,34 @@ class _HomePageState extends State<HomePage> {
       child: Directionality(
         textDirection: TextDirection.ltr,
         child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Row(children: [
-            const Icon(Icons.access_time, size: 26),
-            const SizedBox(width: 8),
-            Text('مدة الصفقة: $duration', style: const TextStyle(fontSize: 16)),
-          ]),
-          Row(children: [
-            Text('نوع السوق: $market', style: const TextStyle(fontSize: 16)),
-            const SizedBox(width: 8),
-            const Icon(Icons.stacked_bar_chart, color: kGreen, size: 26),
-          ]),
+          Flexible(
+            child: Row(children: [
+              const Icon(Icons.access_time, size: 24),
+              const SizedBox(width: 6),
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                      '${tr('footer_duration')}: ${durText(duration)}',
+                      style: const TextStyle(fontSize: 15)),
+                ),
+              ),
+            ]),
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text('${tr('footer_market')}: $market',
+                      style: const TextStyle(fontSize: 15)),
+                ),
+              ),
+              const SizedBox(width: 6),
+              const Icon(Icons.stacked_bar_chart, color: kGreen, size: 24),
+            ]),
+          ),
         ]),
       ),
     );
@@ -840,21 +913,22 @@ class _HomePageState extends State<HomePage> {
         Directionality(
           textDirection: TextDirection.ltr,
           child: Row(children: [
-            _selector(Icons.candlestick_chart, 'زوج التداول',
-                pair ?? 'اختر الزوج', pickPair),
+            _selector(Icons.candlestick_chart, tr('pair_label'),
+                pair ?? tr('pair_hint'), pickPair),
             const SizedBox(width: 10),
-            _selector(Icons.access_time, 'مدة الصفقة', duration, pickDuration),
+            _selector(Icons.access_time, tr('duration_label'),
+                durText(duration), pickDuration),
           ]),
         ),
         const SizedBox(height: 14),
         _analyzeButton(),
         const SizedBox(height: 14),
         if (preview)
-          const Padding(
-            padding: EdgeInsets.only(bottom: 8),
-            child: Text('معاينة تصميم: بيانات تجريبية وليست إشارة حقيقية',
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(tr('preview_banner'),
                 textAlign: TextAlign.center,
-                style: TextStyle(color: kAmber, fontSize: 13)),
+                style: const TextStyle(color: kAmber, fontSize: 13)),
           ),
         _signalCard(current),
         const SizedBox(height: 12),
