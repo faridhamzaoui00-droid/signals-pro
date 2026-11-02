@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
-import 'l10n.dart';
-import 'settings_page.dart';
+import 'engine/datasource.dart';
+import 'engine/indicators.dart';
+import 'engine/strategy.dart';
 import 'history_page.dart';
 import 'info_page.dart';
+import 'l10n.dart';
+import 'l10n2.dart';
+import 'settings_page.dart';
 
 const kBg1 = Color(0xFF030A1F);
 const kBg2 = Color(0xFF07163F);
@@ -36,6 +40,22 @@ Color tcolor(String t) {
 
 Color dark(Color c, double k) => Color.lerp(Colors.black, c, k)!;
 
+String rtext(String enc) {
+  return enc
+      .split(';')
+      .where((e) => e.isNotEmpty)
+      .map((e) {
+        final p = e.split('|');
+        return t2(p[0], p.length > 1 ? p[1] : null);
+      })
+      .join(' • ');
+}
+
+String encR(List<Reason> rs) =>
+    rs.map((r) => r.v == null ? r.key : '${r.key}|${r.v}').join(';');
+
+String arrow(int? v) => v == 1 ? '↑' : (v == -1 ? '↓' : '–');
+
 class Analysis {
   final String type;
   final int score;
@@ -52,7 +72,7 @@ class Analysis {
     this.adx,
     this.rsi,
     this.st = '',
-    this.sr = '—',
+    this.sr = 'sr_none',
     this.reason = '—',
     this.sample = false,
   });
@@ -210,6 +230,81 @@ class _ShellState extends State<Shell> {
   }
 }
 
+class PairSheet extends StatefulWidget {
+  const PairSheet({super.key});
+  @override
+  State<PairSheet> createState() => _PairSheetState();
+}
+
+class _PairSheetState extends State<PairSheet> {
+  List<String>? all;
+  String? err;
+  String q = '';
+  bool busy = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final f = await DataSource.pairs();
+    if (!mounted) return;
+    setState(() {
+      all = f.data;
+      err = f.error;
+      busy = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final list = (all ?? <String>[])
+        .where((s) => s.toLowerCase().contains(q.toLowerCase()))
+        .toList();
+    Widget body;
+    if (busy) {
+      body = const Center(child: CircularProgressIndicator());
+    } else if (err != null) {
+      body = Center(child: Text(t2(err!), textAlign: TextAlign.center));
+    } else if (list.isEmpty) {
+      body = Center(child: Text(t2('pairs_none')));
+    } else {
+      body = ListView(children: [
+        for (final s in list)
+          ListTile(title: Text(s), onTap: () => Navigator.pop(context, s)),
+      ]);
+    }
+    return SizedBox(
+      height: MediaQuery.of(context).size.height * 0.75,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+            16, 16, 16, 16 + MediaQuery.of(context).viewInsets.bottom),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(t2('pairs_title'),
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 4),
+          Text(t2('otc_note'),
+              style: const TextStyle(fontSize: 12, color: Colors.white54)),
+          const SizedBox(height: 8),
+          TextField(
+            onChanged: (v) => setState(() => q = v.trim()),
+            decoration: InputDecoration(
+              hintText: t2('pair_search'),
+              prefixIcon: const Icon(Icons.search),
+              isDense: true,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Expanded(child: body),
+        ]),
+      ),
+    );
+  }
+}
+
 class HomePage extends StatefulWidget {
   final VoidCallback onSettings;
   const HomePage({super.key, required this.onSettings});
@@ -237,6 +332,7 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     langNotifier.addListener(_onLang);
+    DataSource.resolvePending();
   }
 
   @override
@@ -270,15 +366,19 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  void pickPair() {
-    showModalBottomSheet(
+  Future<void> pickPair() async {
+    final r = await showModalBottomSheet<String>(
       context: context,
+      isScrollControlled: true,
       backgroundColor: kCard,
-      builder: (_) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Text(tr('pairs_unavailable')),
-      ),
+      builder: (_) => const PairSheet(),
     );
+    if (!mounted || r == null) return;
+    setState(() {
+      pair = r;
+      preview = false;
+      current = null;
+    });
   }
 
   void pickDuration() {
@@ -300,6 +400,90 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  double? _winRate(List<SignalRecord> all, String p, int dur) {
+    final d = all
+        .where((r) =>
+            r.pair == p &&
+            r.duration == '$dur' &&
+            (r.result == 'WIN' || r.result == 'LOSS'))
+        .toList();
+    if (d.length < 30) return null;
+    return d.where((r) => r.result == 'WIN').length * 100 / d.length;
+  }
+
+  Analysis _toAnalysis(EngineResult r, double? wr) {
+    String dn(int? v) => v == 1 ? 'UP' : (v == -1 ? 'DOWN' : '');
+    return Analysis(
+      type: r.type,
+      score: r.score,
+      winRate: wr,
+      tf: {for (final e in r.tf.entries) e.key: dn(e.value)},
+      adx: r.adx,
+      rsi: r.rsi,
+      st: dn(r.st),
+      sr: r.sr,
+      reason: encR(r.reasons),
+    );
+  }
+
+  Future<Analysis> _realAnalysis() async {
+    final p = pair!;
+    Analysis na(String key) => Analysis(type: 'NA', reason: key);
+    final tfs = Strategy.tfsFor(duration);
+    if (tfs.isEmpty) return na('na_duration');
+    final data = <String, List<Candle>>{};
+    for (final n in tfs) {
+      final f = await DataSource.candles(
+          p, n, DateTime.now().millisecondsSinceEpoch);
+      if (f.data == null) {
+        connected = false;
+        return na(f.error ?? 'na_source_error');
+      }
+      data[n] = f.data!;
+    }
+    connected = true;
+    var hist = <SignalRecord>[];
+    try {
+      hist = await HistoryDb.all();
+    } catch (_) {}
+    LastSignal? last;
+    for (final h in hist) {
+      if (h.pair == p) {
+        last = LastSignal(h.direction, h.issuedAt, h.price ?? 0);
+        break;
+      }
+    }
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final r = Strategy.run(
+      data: data,
+      durationSec: duration,
+      nowMs: now,
+      connectionOk: true,
+      last: last,
+    );
+    if (r.type == 'UP' || r.type == 'DOWN') {
+      final ind = 'RSI ${r.rsi?.toStringAsFixed(1)} | ADX '
+          '${r.adx?.toStringAsFixed(1)} | ST ${arrow(r.st)} | ATR '
+          '${r.atr?.toStringAsFixed(5)} | '
+          '${r.tf.entries.map((e) => '${e.key}${arrow(e.value)}').join(' ')}';
+      try {
+        await HistoryDb.insert(SignalRecord(
+          pair: p,
+          market: p.contains('OTC') ? 'OTC' : 'REG',
+          direction: r.type,
+          duration: '$duration',
+          indicators: ind,
+          reasons: r.reasons.map((x) => t2(x.key, x.v)).join(' • '),
+          issuedAt: now,
+          price: r.price,
+          score: r.score,
+        ));
+      } catch (_) {}
+    }
+    DataSource.resolvePending();
+    return _toAnalysis(r, r.type == 'NA' ? null : _winRate(hist, p, duration));
+  }
+
   Future<void> analyze() async {
     if (loading) return;
     if (pair == null) {
@@ -308,14 +492,22 @@ class _HomePageState extends State<HomePage> {
       return;
     }
     setState(() => loading = true);
-    await Future.delayed(const Duration(seconds: 1));
+    Analysis res;
+    if (preview) {
+      await Future.delayed(const Duration(seconds: 1));
+      res = kSample;
+    } else {
+      try {
+        res = await _realAnalysis();
+      } catch (_) {
+        res = const Analysis(type: 'NA', reason: 'na_source_error');
+      }
+    }
     if (!mounted) return;
     setState(() {
       loading = false;
       updated = _now();
-      current = preview
-          ? kSample
-          : const Analysis(type: 'NA', reason: 'na_reason');
+      current = res;
     });
   }
 
@@ -564,12 +756,12 @@ class _HomePageState extends State<HomePage> {
   Widget _signalCard(Analysis? a) {
     final t = a?.type ?? 'NONE';
     final c = tcolor(t);
-    final arrow = t == 'UP' || t == 'DOWN';
+    final hasArrow = t == 'UP' || t == 'DOWN';
     String badge;
     String main;
     String big;
     String chip;
-    if (arrow) {
+    if (hasArrow) {
       final sc = a!.score;
       badge = sc >= 10
           ? tr('badge_excellent')
@@ -581,12 +773,12 @@ class _HomePageState extends State<HomePage> {
       badge = tr('badge_wait');
       main = tr('main_wait');
       big = '—';
-      chip = tr(a!.reason);
+      chip = rtext(a!.reason);
     } else if (t == 'NA') {
       badge = tr('badge_na');
       main = 'DATA UNAVAILABLE';
       big = '—';
-      chip = tr(a!.reason);
+      chip = rtext(a!.reason);
     } else {
       badge = tr('badge_ready');
       main = tr('main_none');
@@ -629,7 +821,7 @@ class _HomePageState extends State<HomePage> {
               height: 328 * s,
               child: Image.asset('assets/bull.png', fit: BoxFit.fill),
             ),
-            if (arrow)
+            if (hasArrow)
               Positioned(
                 right: 6 * s,
                 bottom: 3 * s,
@@ -639,7 +831,7 @@ class _HomePageState extends State<HomePage> {
               ),
             Positioned(
               left: 400 * s,
-              right: (arrow ? 215 : 20) * s,
+              right: (hasArrow ? 215 : 20) * s,
               top: 10 * s,
               bottom: 10 * s,
               child: Directionality(
@@ -829,7 +1021,7 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ]),
                   const SizedBox(height: 4),
-                  Text(tr(a?.sr ?? '—'),
+                  Text(a == null ? '—' : t2(a.sr),
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                           color: kCyan,
@@ -843,9 +1035,11 @@ class _HomePageState extends State<HomePage> {
                   Text(tr('main_reason'),
                       style: const TextStyle(fontSize: 14)),
                   const SizedBox(height: 4),
-                  Text(tr(a?.reason ?? '—'),
+                  Text(rtext(a?.reason ?? '—'),
                       textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 14)),
+                      maxLines: 5,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 13)),
                 ]),
               ),
             ])),
@@ -929,6 +1123,10 @@ class _HomePageState extends State<HomePage> {
         _details(current),
         const SizedBox(height: 12),
         _footer(),
+        const SizedBox(height: 10),
+        Text(t2('ext_note'),
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 11, color: Colors.white38)),
       ],
     );
   }
