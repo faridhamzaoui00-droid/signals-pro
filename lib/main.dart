@@ -71,8 +71,10 @@ class SignalsApp extends StatelessWidget {
       title: 'Farid Hamzaoui Signals Pro',
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark().copyWith(scaffoldBackgroundColor: kBg1),
-      builder: (c, child) =>
-          Directionality(textDirection: TextDirection.rtl, child: child!),
+      builder: (c, child) => MediaQuery(
+        data: MediaQuery.of(c).copyWith(textScaler: TextScaler.noScaling),
+        child: Directionality(textDirection: TextDirection.rtl, child: child!),
+      ),
       home: const Shell(),
     );
   }
@@ -297,16 +299,17 @@ class _HomePageState extends State<HomePage> {
       child: Row(children: [
         GestureDetector(
           onLongPress: togglePreview,
-          child: Image.asset('assets/logo.png', width: 62),
+          child: Image.asset('assets/logo.png', width: 58),
         ),
-        const SizedBox(width: 10),
+        const SizedBox(width: 8),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             FittedBox(
               fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
               child: RichText(
                 text: const TextSpan(
-                  style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800),
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
                   children: [
                     TextSpan(text: 'Farid Hamzaoui Signals '),
                     TextSpan(text: 'Pro', style: TextStyle(color: kBlue)),
@@ -315,16 +318,21 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
             const SizedBox(height: 2),
-            const Text('تحليل ذكي .. قرارات أدق .. فرص أفضل',
-                style: TextStyle(fontSize: 14, color: Colors.white70)),
+            const FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text('تحليل ذكي .. قرارات أدق .. فرص أفضل',
+                  style: TextStyle(fontSize: 13, color: Colors.white70)),
+            ),
           ]),
         ),
+        const SizedBox(width: 8),
         InkWell(
           onTap: widget.onSettings,
           child: Container(
             padding: const EdgeInsets.all(10),
             decoration: _glass(kLine, r: 14),
-            child: const Icon(Icons.settings, color: kBlue, size: 28),
+            child: const Icon(Icons.settings, color: kBlue, size: 26),
           ),
         ),
       ]),
@@ -339,24 +347,33 @@ class _HomePageState extends State<HomePage> {
         Expanded(
           child: Container(
             height: 74,
-            padding: const EdgeInsets.symmetric(horizontal: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 8),
             decoration: _glass(c),
             child: Row(children: [
               Icon(connected ? Icons.verified_user : Icons.gpp_maybe,
-                  color: c, size: 32),
-              const SizedBox(width: 8),
+                  color: c, size: 28),
+              const SizedBox(width: 6),
               Expanded(
                 child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(connected ? 'متصل' : 'غير متصل',
-                          style: TextStyle(
-                              color: c,
-                              fontSize: 17,
-                              fontWeight: FontWeight.bold)),
-                      const Text('مصدر البيانات',
-                          style: TextStyle(fontSize: 12, color: Colors.white70)),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(connected ? 'متصل' : 'غير متصل',
+                            style: TextStyle(
+                                color: c,
+                                fontSize: 17,
+                                fontWeight: FontWeight.bold)),
+                      ),
+                      const FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text('مصدر البيانات',
+                            style: TextStyle(
+                                fontSize: 12, color: Colors.white70)),
+                      ),
                     ]),
               ),
             ]),
@@ -366,23 +383,28 @@ class _HomePageState extends State<HomePage> {
         Expanded(
           child: Container(
             height: 74,
-            padding: const EdgeInsets.symmetric(horizontal: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 8),
             decoration: _glass(kLine),
             child: Row(children: [
-              const Icon(Icons.access_time, color: kBlue, size: 32),
-              const SizedBox(width: 8),
+              const Icon(Icons.access_time, color: kBlue, size: 28),
+              const SizedBox(width: 6),
               Expanded(
                 child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('آخر تحديث', style: TextStyle(fontSize: 13)),
+                      const FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text('آخر تحديث', style: TextStyle(fontSize: 13)),
+                      ),
                       FittedBox(
                         fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
                         child: Text(updated,
                             style: const TextStyle(
                                 color: kCyan,
-                                fontSize: 19,
+                                fontSize: 17,
                                 fontWeight: FontWeight.bold)),
                       ),
                     ]),
@@ -397,7 +419,7 @@ class _HomePageState extends State<HomePage> {
             padding: const EdgeInsets.symmetric(horizontal: 8),
             decoration: _glass(kLine),
             child: Row(children: [
-              Image.asset('assets/po.png', width: 30),
+              Image.asset('assets/po.png', width: 28),
               const SizedBox(width: 6),
               const Expanded(
                 child: FittedBox(
@@ -405,7 +427,7 @@ class _HomePageState extends State<HomePage> {
                   alignment: Alignment.centerLeft,
                   child: Text('Pocket Option',
                       style:
-                          TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
+                          TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
                 ),
               ),
             ]),
@@ -656,14 +678,17 @@ class _HomePageState extends State<HomePage> {
         Text(name,
             style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
         const SizedBox(height: 4),
-        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Icon(up ? Icons.north_east : (down ? Icons.south_east : Icons.remove),
-              color: c, size: 22),
-          const SizedBox(width: 4),
-          Text(txt,
-              style: TextStyle(
-                  color: c, fontSize: 16, fontWeight: FontWeight.bold)),
-        ]),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Icon(up ? Icons.north_east : (down ? Icons.south_east : Icons.remove),
+                color: c, size: 22),
+            const SizedBox(width: 4),
+            Text(txt,
+                style: TextStyle(
+                    color: c, fontSize: 16, fontWeight: FontWeight.bold)),
+          ]),
+        ),
       ]),
     );
   }
@@ -671,16 +696,19 @@ class _HomePageState extends State<HomePage> {
   Widget _metric(IconData icon, Color ic, String label, String value, Color vc) {
     return Expanded(
       child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Icon(icon, color: ic, size: 24),
-        const SizedBox(width: 4),
+        Icon(icon, color: ic, size: 22),
+        const SizedBox(width: 3),
         Flexible(
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Text(label, style: const TextStyle(fontSize: 13)),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(label, style: const TextStyle(fontSize: 13)),
+            ),
             FittedBox(
               fit: BoxFit.scaleDown,
               child: Text(value,
                   style: TextStyle(
-                      color: vc, fontSize: 21, fontWeight: FontWeight.bold)),
+                      color: vc, fontSize: 20, fontWeight: FontWeight.bold)),
             ),
           ]),
         ),
