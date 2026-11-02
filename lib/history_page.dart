@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
+import 'l10n.dart';
 
 const _card = Color(0xFF0A1A3F);
 const _line = Color(0xFF1F4FB5);
@@ -109,13 +110,13 @@ class HistoryDb {
 String _resultLabel(String r) {
   switch (r) {
     case 'WIN':
-      return 'رابحة';
+      return tr('res_win');
     case 'LOSS':
-      return 'خاسرة';
+      return tr('res_loss');
     case 'UNVERIFIED':
-      return 'غير قابلة للتحقق';
+      return tr('res_unv');
     default:
-      return 'قيد الانتظار';
+      return tr('res_pending');
   }
 }
 
@@ -138,6 +139,8 @@ String _fmt(int ms) {
   return '${d.year}-${t(d.month)}-${t(d.day)}  ${t(d.hour)}:${t(d.minute)}:${t(d.second)}';
 }
 
+String _marketName(String m) => m == 'OTC' ? 'OTC' : tr('market_regular');
+
 class HistoryPage extends StatefulWidget {
   const HistoryPage({super.key});
   @override
@@ -150,19 +153,30 @@ class _HistoryPageState extends State<HistoryPage> {
   String filter = 'all';
   String query = '';
 
-  static const filters = <String, String>{
-    'all': 'جميع الإشارات',
-    'WIN': 'الرابحة',
-    'LOSS': 'الخاسرة',
-    'PENDING': 'قيد الانتظار',
-    'OTC': 'OTC',
-    'REG': 'السوق العادي',
-  };
+  Map<String, String> get filters => {
+        'all': tr('f_all'),
+        'WIN': tr('f_win'),
+        'LOSS': tr('f_loss'),
+        'PENDING': tr('f_pending'),
+        'OTC': 'OTC',
+        'REG': tr('market_regular'),
+      };
+
+  void _onLang() {
+    if (mounted) setState(() {});
+  }
 
   @override
   void initState() {
     super.initState();
+    langNotifier.addListener(_onLang);
     _load();
+  }
+
+  @override
+  void dispose() {
+    langNotifier.removeListener(_onLang);
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -218,46 +232,6 @@ class _HistoryPageState extends State<HistoryPage> {
     );
   }
 
-  void _details(SignalRecord r) {
-    final up = r.direction == 'UP';
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: _card,
-      isScrollControlled: true,
-      builder: (_) => Padding(
-        padding: const EdgeInsets.all(18),
-        child: SingleChildScrollView(
-          child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('${r.pair}  (${r.market == 'OTC' ? 'OTC' : 'السوق العادي'})',
-                    style: const TextStyle(
-                        fontSize: 20, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 10),
-                _row('الاتجاه', up ? 'UP – صاعد' : 'DOWN – هابط'),
-                _row('مدة الصفقة', r.duration),
-                _row('التقييم', '${r.score}/10'),
-                _row('وقت الإشارة', _fmt(r.issuedAt)),
-                _row('السعر وقت الإشارة', r.price?.toString() ?? '—'),
-                _row('وقت الانتهاء', r.endAt != null ? _fmt(r.endAt!) : '—'),
-                _row('السعر عند الانتهاء', r.endPrice?.toString() ?? '—'),
-                _row('النتيجة', _resultLabel(r.result)),
-                const Divider(),
-                const Text('المؤشرات',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
-                Text(r.indicators.isEmpty ? '—' : r.indicators),
-                const SizedBox(height: 8),
-                const Text('أسباب الإشارة',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
-                Text(r.reasons.isEmpty ? '—' : r.reasons),
-                const SizedBox(height: 10),
-              ]),
-        ),
-      ),
-    );
-  }
-
   Widget _row(String k, String v) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 3),
         child: Row(children: [
@@ -265,6 +239,51 @@ class _HistoryPageState extends State<HistoryPage> {
           Expanded(child: Text(v)),
         ]),
       );
+
+  void _details(SignalRecord r) {
+    final up = r.direction == 'UP';
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: _card,
+      isScrollControlled: true,
+      builder: (_) => Directionality(
+        textDirection: dirFor(langNotifier.value),
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: SingleChildScrollView(
+            child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('${r.pair}  (${_marketName(r.market)})',
+                      style: const TextStyle(
+                          fontSize: 20, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 10),
+                  _row(tr('d_direction'),
+                      up ? tr('main_up') : tr('main_down')),
+                  _row(tr('duration_label'), durFromStored(r.duration)),
+                  _row(tr('m_score'), '${r.score}/10'),
+                  _row(tr('d_time'), _fmt(r.issuedAt)),
+                  _row(tr('d_price'), r.price?.toString() ?? '—'),
+                  _row(tr('d_end_time'),
+                      r.endAt != null ? _fmt(r.endAt!) : '—'),
+                  _row(tr('d_end_price'), r.endPrice?.toString() ?? '—'),
+                  _row(tr('d_result'), _resultLabel(r.result)),
+                  const Divider(),
+                  Text(tr('d_indicators'),
+                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                  Text(r.indicators.isEmpty ? '—' : r.indicators),
+                  const SizedBox(height: 8),
+                  Text(tr('d_reasons'),
+                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                  Text(r.reasons.isEmpty ? '—' : r.reasons),
+                  const SizedBox(height: 10),
+                ]),
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _tile(SignalRecord r) {
     final up = r.direction == 'UP';
@@ -286,10 +305,10 @@ class _HistoryPageState extends State<HistoryPage> {
           const SizedBox(width: 10),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('${r.pair}  •  ${r.market == 'OTC' ? 'OTC' : 'عادي'}',
+              Text('${r.pair}  •  ${_marketName(r.market)}',
                   style: const TextStyle(
                       fontSize: 16, fontWeight: FontWeight.bold)),
-              Text('${_fmt(r.issuedAt)}  •  ${r.duration}',
+              Text('${_fmt(r.issuedAt)}  •  ${durFromStored(r.duration)}',
                   style: const TextStyle(fontSize: 12, color: Colors.white70)),
             ]),
           ),
@@ -327,26 +346,25 @@ class _HistoryPageState extends State<HistoryPage> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(12, 16, 12, 16),
       children: [
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 4),
-          child: Text('السجل',
-              style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Text(tr('hist_title'),
+              style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
         ),
         const SizedBox(height: 8),
         Row(children: [
-          _stat('إجمالي الإشارات', '${items.length}', _blue),
-          _stat('رابحة', '$wins', _green),
-          _stat('خاسرة', '$losses', _red),
+          _stat(tr('st_total'), '${items.length}', _blue),
+          _stat(tr('st_win'), '$wins', _green),
+          _stat(tr('st_loss'), '$losses', _red),
         ]),
         Row(children: [
-          _stat('قيد الانتظار', '$pending', _amber),
-          _stat('نسبة النجاح الفعلية', rate, Colors.white),
+          _stat(tr('st_pending'), '$pending', _amber),
+          _stat(tr('st_rate'), rate, Colors.white),
         ]),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-          child: Text(
-              'تُحسب النسبة من الإشارات المحسومة فقط: الرابحة ÷ (الرابحة + الخاسرة).',
-              style: TextStyle(fontSize: 11, color: Colors.white54)),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+          child: Text(tr('rate_note'),
+              style: const TextStyle(fontSize: 11, color: Colors.white54)),
         ),
         const SizedBox(height: 6),
         SingleChildScrollView(
@@ -367,7 +385,7 @@ class _HistoryPageState extends State<HistoryPage> {
         TextField(
           onChanged: (v) => setState(() => query = v.trim()),
           decoration: InputDecoration(
-            hintText: 'بحث حسب الزوج',
+            hintText: tr('search_hint'),
             prefixIcon: const Icon(Icons.search),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
             isDense: true,
@@ -379,11 +397,11 @@ class _HistoryPageState extends State<HistoryPage> {
               padding: EdgeInsets.all(30),
               child: Center(child: CircularProgressIndicator()))
         else if (list.isEmpty)
-          const Padding(
-            padding: EdgeInsets.all(30),
+          Padding(
+            padding: const EdgeInsets.all(30),
             child: Center(
-                child: Text('لا توجد إشارات بعد',
-                    style: TextStyle(color: Colors.white70))),
+                child: Text(tr('empty_hist'),
+                    style: const TextStyle(color: Colors.white70))),
           )
         else
           for (final r in list) _tile(r),
