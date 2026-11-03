@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'engine/datasource.dart';
+import 'engine/po_probe.dart';
 import 'l10n.dart';
 import 'l10n2.dart';
 
@@ -125,6 +126,7 @@ class _SettingsPageState extends State<SettingsPage> {
           _langTile('fr', 'Français'),
           _langTile('en', 'English'),
         ]),
+        const PoProbeCard(),
         _section(t2('key_title'), Icons.sensors, [
           Row(children: [
             Icon(hasKey ? Icons.verified_user : Icons.gpp_maybe,
@@ -179,9 +181,6 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ]),
           const SizedBox(height: 8),
-          Text(tr('ssid_note'),
-              style: const TextStyle(fontSize: 12, color: Colors.white54)),
-          const SizedBox(height: 6),
           Text(t2('key_help'),
               style: const TextStyle(fontSize: 12, color: Colors.white54)),
         ]),
