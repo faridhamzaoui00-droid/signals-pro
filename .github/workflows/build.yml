@@ -31,8 +31,30 @@ jobs:
       - name: Configure manifest
         run: |
           M=android/app/src/main/AndroidManifest.xml
-          sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <application#' $M
+          PERMS='<uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>\n    <uses-permission android:name="android.permission.WAKE_LOCK"/>\n    <uses-permission android:name="android.permission.VIBRATE"/>\n    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>'
+          sed -i "s#<application#${PERMS}\n    <application#" $M
+          sed -i 's#</application>#<service android:name="com.pravera.flutter_foreground_task.service.ForegroundService" android:foregroundServiceType="dataSync" android:exported="false" />\n    </application>#' $M
           sed -i 's#android:label="[^"]*"#android:label="Farid Hamzaoui Signals Pro"#' $M
+
+      - name: Patch Gradle for desugaring
+        run: |
+          python3 - <<'PY'
+          import os
+          kts = 'android/app/build.gradle.kts'
+          grv = 'android/app/build.gradle'
+          if os.path.exists(kts):
+              s = open(kts).read()
+              if 'isCoreLibraryDesugaringEnabled' not in s:
+                  s = s.replace('compileOptions {', 'compileOptions {\n        isCoreLibraryDesugaringEnabled = true', 1)
+                  s += '\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")\n}\n'
+                  open(kts, 'w').write(s)
+          elif os.path.exists(grv):
+              s = open(grv).read()
+              if 'coreLibraryDesugaringEnabled' not in s:
+                  s = s.replace('compileOptions {', 'compileOptions {\n        coreLibraryDesugaringEnabled true', 1)
+                  s += "\ndependencies {\n    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'\n}\n"
+                  open(grv, 'w').write(s)
+          PY
 
       - run: flutter pub get
 
