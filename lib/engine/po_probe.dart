@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -59,6 +60,29 @@ class PoProbe {
     return r?.group(1) ?? '?';
   }
 
+  static void _assets(List<int> bytes, void Function(String) log) {
+    try {
+      final j = jsonDecode(utf8.decode(bytes, allowMalformed: true));
+      if (j is! List) return;
+      var otc = 0, flag = 0;
+      final names = <String>[];
+      for (final a in j) {
+        if (a is List && a.length > 14 && a[1] is String) {
+          final s = a[1] as String;
+          if (s.endsWith('_otc')) {
+            otc++;
+            if (a[14] == true) flag++;
+            if (names.length < 12) names.add('$s(${a[5]}%)');
+          }
+        }
+      }
+      log('أصول: ${j.length} | OTC: $otc | flag14=true: $flag');
+      log(names.join('  '));
+    } catch (_) {
+      log('تعذر تحليل قائمة الأصول');
+    }
+  }
+
   static Future<void> run(String ssid, void Function(String) log) async {
     final full = ssid.startsWith('42');
     final demo = ssid.contains('"isDemo":1') || !full;
@@ -94,7 +118,10 @@ class PoProbe {
     }
     final WebSocket sock = ws;
     final seen = <String, int>{};
+    final binSeen = <String, int>{};
+    String? lastEv;
     var symSent = false;
+    var histSent = false;
     final done = Completer<void>();
 
     void sendSym() {
@@ -102,6 +129,16 @@ class PoProbe {
       symSent = true;
       sock.add('42["changeSymbol",{"asset":"EURUSD_otc","period":60}]');
       log('→ changeSymbol EURUSD_otc');
+    }
+
+    void sendHist() {
+      if (histSent) return;
+      histSent = true;
+      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final idx = int.parse('${now}123');
+      sock.add(
+          '42["loadHistoryPeriod",{"asset":"EURUSD_otc","time":$now,"index":$idx,"offset":9000,"period":60}]');
+      log('→ loadHistoryPeriod EURUSD_otc 60s');
     }
 
     final sub = sock.listen((m) {
@@ -123,16 +160,26 @@ class PoProbe {
           }
           final ev = _event(m);
           seen[ev] = (seen[ev] ?? 0) + 1;
-          if (seen[ev] == 1) {
-            log('حدث/event: $ev | ${_redact(_trunc(m, 150), ssid)}');
+          lastEv = m.contains('_placeholder') ? ev : null;
+          if (seen[ev] == 1 && !m.contains('_placeholder')) {
+            log('حدث/event: $ev | ${_redact(_trunc(m, 300), ssid)}');
           }
-          if (ev == 'successauth') sendSym();
+          if (ev == 'successauth') {
+            sendSym();
+            Timer(const Duration(seconds: 3), sendHist);
+          }
         } else if (m is List<int>) {
-          seen['(binary)'] = (seen['(binary)'] ?? 0) + 1;
-          if (seen['(binary)'] == 1) {
-            final txt = String.fromCharCodes(m.take(180));
-            log('binary ${m.length}B | ${_redact(_trunc(txt, 150), ssid)}');
+          final label = lastEv ?? '?';
+          binSeen[label] = (binSeen[label] ?? 0) + 1;
+          if (binSeen[label] == 1) {
+            if (label == 'updateAssets') {
+              _assets(m, log);
+            } else {
+              final txt = utf8.decode(m, allowMalformed: true);
+              log('[$label] ${m.length}B | ${_redact(_trunc(txt, 420), ssid)}');
+            }
           }
+          lastEv = null;
         }
       } catch (_) {}
     }, onDone: () {
@@ -144,7 +191,8 @@ class PoProbe {
     });
 
     Timer(const Duration(seconds: 6), sendSym);
-    Timer(const Duration(seconds: 16), () {
+    Timer(const Duration(seconds: 9), sendHist);
+    Timer(const Duration(seconds: 18), () {
       if (!done.isCompleted) done.complete();
     });
     await done.future;
@@ -315,7 +363,7 @@ class _PoProbeCardState extends State<PoProbeCard> {
           const SizedBox(height: 8),
           Container(
             width: double.infinity,
-            constraints: const BoxConstraints(maxHeight: 280),
+            constraints: const BoxConstraints(maxHeight: 420),
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
                 color: Colors.black38, borderRadius: BorderRadius.circular(10)),
