@@ -63,15 +63,24 @@ jobs:
           set +e
           flutter build apk --release 2>&1 | tee /tmp/build.log
           code=${PIPESTATUS[0]}
-          if [ "$code" -ne 0 ]; then
-            echo ""
-            echo "######## ERRORS SUMMARY ########"
-            grep -n -E "Error:|error:|e: file|What went wrong" /tmp/build.log | head -30
-            echo "---- details ----"
-            grep -n -A 12 "What went wrong" /tmp/build.log | head -40
-            echo "######## END ########"
-          fi
           exit $code
+
+      - name: Save error summary to repo
+        if: failure()
+        run: |
+          {
+            echo "=== DART ERRORS ==="
+            grep -n -E "\.dart:[0-9]+:[0-9]+: Error" /tmp/build.log | head -30
+            echo "=== GRADLE ==="
+            grep -n -A 14 "What went wrong" /tmp/build.log | head -40
+            echo "=== OTHER ==="
+            grep -n -E "e: |error:|Execution failed|Could not|not found" /tmp/build.log | head -25
+          } > build_error.txt
+          git config user.name "build-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add build_error.txt
+          git commit -m "build error summary" || true
+          git push origin HEAD:main || true
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
