@@ -1,26 +1,20 @@
-import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:http/http.dart' as http;
 import '../history_page.dart';
 import 'indicators.dart';
-import 'strategy.dart';
+import 'po_client.dart';
 
-class Fetch<T> {
-  final T? data;
-  final String? error;
-  const Fetch(this.data, this.error);
-}
+export 'po_client.dart' show Fetch;
 
 class DataSource {
   static const _s = FlutterSecureStorage();
-  static List<String>? _pairs;
-  static const _iv = {
-    'M1': '1min',
-    'M5': '5min',
-    'M15': '15min',
-    'M30': '30min',
-  };
 
+  static const _per = {'M1': 60, 'M5': 300, 'M15': 900, 'M30': 1800};
+
+  // الأسماء المعروضة: "EURUSD OTC" والمعرّف الفعلي: "EURUSD_otc"
+  static String _sym(String label) => label.replaceAll(' OTC', '_otc');
+  static String _label(String sym) => sym.replaceAll('_otc', ' OTC');
+
+  // مفتاح Twelve Data الاحتياطي (غير مستعمل في التحليل حالياً)
   static Future<String?> key() async {
     try {
       final k = await _s.read(key: 'td_key');
@@ -35,7 +29,6 @@ class DataSource {
   static Future<bool> saveKey(String v) async {
     try {
       await _s.write(key: 'td_key', value: v);
-      _pairs = null;
       return true;
     } catch (_) {
       return false;
@@ -46,85 +39,32 @@ class DataSource {
     try {
       await _s.delete(key: 'td_key');
     } catch (_) {}
-    _pairs = null;
-  }
-
-  static Future<Fetch<Map<String, dynamic>>> _get(
-      String path, Map<String, String> q) async {
-    final k = await key();
-    if (k == null) {
-      return const Fetch<Map<String, dynamic>>(null, 'na_no_key');
-    }
-    try {
-      final uri = Uri.https('api.twelvedata.com', path, {...q, 'apikey': k});
-      final r = await http.get(uri).timeout(const Duration(seconds: 20));
-      final m = jsonDecode(r.body);
-      if (m is! Map<String, dynamic>) {
-        return const Fetch<Map<String, dynamic>>(null, 'na_source_error');
-      }
-      if (m['status'] == 'error') {
-        return Fetch<Map<String, dynamic>>(
-            null, m['code'] == 429 ? 'na_limit' : 'na_source_error');
-      }
-      return Fetch<Map<String, dynamic>>(m, null);
-    } catch (_) {
-      return const Fetch<Map<String, dynamic>>(null, 'na_net');
-    }
   }
 
   static Future<Fetch<List<String>>> pairs() async {
-    if (_pairs != null) return Fetch<List<String>>(_pairs, null);
-    final f = await _get('/forex_pairs', {});
-    if (f.data == null) return Fetch<List<String>>(null, f.error);
-    final d = f.data!['data'];
-    if (d is! List) return const Fetch<List<String>>(null, 'na_source_error');
-    final out = <String>[];
-    for (final e in d) {
-      if (e is Map && e['symbol'] is String) out.add(e['symbol'] as String);
+    final err = await PoClient.I.connect();
+    if (err != null) return Fetch<List<String>>(null, err);
+    for (var i = 0; i < 10 && PoClient.I.assets.isEmpty; i++) {
+      await Future.delayed(const Duration(milliseconds: 300));
     }
-    out.sort();
+    final out = PoClient.I.assets
+        .where((a) => a.open && a.symbol.endsWith('_otc'))
+        .map((a) => _label(a.symbol))
+        .toList()
+      ..sort();
     if (out.isEmpty) return const Fetch<List<String>>(null, 'na_source_error');
-    _pairs = out;
     return Fetch<List<String>>(out, null);
   }
 
-  static Future<Fetch<List<Candle>>> candles(
-      String sym, String tf, int nowMs,
+  static Future<Fetch<List<Candle>>> candles(String label, String tf, int nowMs,
       {int size = 220}) async {
-    final f = await _get('/time_series', {
-      'symbol': sym,
-      'interval': _iv[tf]!,
-      'outputsize': '$size',
-      'timezone': 'UTC',
-    });
-    if (f.data == null) return Fetch<List<Candle>>(null, f.error);
-    final v = f.data!['values'];
-    if (v is! List || v.isEmpty) {
-      return const Fetch<List<Candle>>(null, 'na_source_error');
-    }
-    final ms = Strategy.tfMs[tf]!;
-    final out = <Candle>[];
-    for (final e in v) {
-      if (e is! Map) continue;
-      final raw = '${e['datetime']}'.replaceFirst(' ', 'T');
-      final dt = DateTime.tryParse('${raw}Z');
-      final o = double.tryParse('${e['open']}');
-      final h = double.tryParse('${e['high']}');
-      final l = double.tryParse('${e['low']}');
-      final c = double.tryParse('${e['close']}');
-      if (dt == null || o == null || h == null || l == null || c == null) {
-        continue;
-      }
-      final t = dt.millisecondsSinceEpoch;
-      out.add(Candle(t, o, h, l, c, closed: t + ms <= nowMs));
-    }
-    out.sort((a, b) => a.t.compareTo(b.t));
-    return Fetch<List<Candle>>(out, null);
+    final p = _per[tf];
+    if (p == null) return const Fetch<List<Candle>>(null, 'na_source_error');
+    return PoClient.I.candles(_sym(label), p, count: size);
   }
 
-  /// يحسم الصفقات المعلقة بعد انتهاء مدتها: يقارن سعر الإشارة
-  /// بسعر افتتاح أول شمعة دقيقة بعد وقت الانتهاء. التعادل أو غياب
-  /// البيانات يعني UNVERIFIED وليس خسارة.
+  /// يحسم الصفقات المعلقة من شموع Pocket Option نفسها بعد انتهاء مدتها.
+  /// التعادل أو غياب البيانات = UNVERIFIED وليس خسارة.
   static Future<void> resolvePending() async {
     try {
       final all = await HistoryDb.all();
