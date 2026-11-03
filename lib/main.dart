@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'engine/datasource.dart';
 import 'engine/indicators.dart';
+import 'engine/monitor.dart';
 import 'engine/strategy.dart';
 import 'history_page.dart';
 import 'info_page.dart';
 import 'l10n.dart';
 import 'l10n2.dart';
+import 'notify_page.dart';
+import 'pair_sheet.dart';
 import 'settings_page.dart';
+import 'signals_page.dart';
 
 const kBg1 = Color(0xFF030A1F);
 const kBg2 = Color(0xFF07163F);
@@ -130,6 +134,7 @@ class _ShellState extends State<Shell> {
   void initState() {
     super.initState();
     langNotifier.addListener(_onLang);
+    Monitor.I.load();
   }
 
   @override
@@ -145,6 +150,8 @@ class _ShellState extends State<Shell> {
       const HistoryPage(),
       const SettingsPage(),
       const InfoPage(),
+      const SignalsPage(),
+      const NotifyPage(),
     ];
     return Scaffold(
       body: Container(
@@ -163,7 +170,7 @@ class _ShellState extends State<Shell> {
 
   Widget _navItem(int i, IconData icon, String label) {
     final sel = tab == i;
-    final double pad = sel ? 8 : 4;
+    final double pad = sel ? 6 : 3;
     return Expanded(
       child: InkWell(
         onTap: () => go(i),
@@ -186,21 +193,24 @@ class _ShellState extends State<Shell> {
                       shape: BoxShape.circle,
                       color: kBlue.withOpacity(0.35),
                       boxShadow: [
-                        BoxShadow(color: kBlue.withOpacity(0.7), blurRadius: 16)
+                        BoxShadow(color: kBlue.withOpacity(0.7), blurRadius: 14)
                       ],
                     )
                   : null,
               child: Icon(icon,
-                  size: 28, color: sel ? Colors.white : const Color(0xFF8FB0E8)),
+                  size: 24, color: sel ? Colors.white : const Color(0xFF8FB0E8)),
             ),
             const SizedBox(height: 2),
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(label,
-                  style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: sel ? FontWeight.bold : FontWeight.normal,
-                      color: sel ? kCyan : const Color(0xFF8FB0E8))),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(label,
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: sel ? FontWeight.bold : FontWeight.normal,
+                        color: sel ? kCyan : const Color(0xFF8FB0E8))),
+              ),
             ),
           ]),
         ),
@@ -222,84 +232,11 @@ class _ShellState extends State<Shell> {
             _navItem(1, Icons.bar_chart, tr('nav_history')),
             _navItem(2, Icons.settings, tr('nav_settings')),
             _navItem(0, Icons.home, tr('nav_home')),
+            _navItem(4, Icons.bolt, t2('nav_signals')),
+            _navItem(5, Icons.notifications_active, t2('nav_notify')),
             _navItem(3, Icons.info_outline, tr('nav_info')),
           ]),
         ),
-      ),
-    );
-  }
-}
-
-class PairSheet extends StatefulWidget {
-  const PairSheet({super.key});
-  @override
-  State<PairSheet> createState() => _PairSheetState();
-}
-
-class _PairSheetState extends State<PairSheet> {
-  List<String>? all;
-  String? err;
-  String q = '';
-  bool busy = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    final f = await DataSource.pairs();
-    if (!mounted) return;
-    setState(() {
-      all = f.data;
-      err = f.error;
-      busy = false;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final list = (all ?? <String>[])
-        .where((s) => s.toLowerCase().contains(q.toLowerCase()))
-        .toList();
-    Widget body;
-    if (busy) {
-      body = const Center(child: CircularProgressIndicator());
-    } else if (err != null) {
-      body = Center(child: Text(t2(err!), textAlign: TextAlign.center));
-    } else if (list.isEmpty) {
-      body = Center(child: Text(t2('pairs_none')));
-    } else {
-      body = ListView(children: [
-        for (final s in list)
-          ListTile(title: Text(s), onTap: () => Navigator.pop(context, s)),
-      ]);
-    }
-    return SizedBox(
-      height: MediaQuery.of(context).size.height * 0.75,
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(
-            16, 16, 16, 16 + MediaQuery.of(context).viewInsets.bottom),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(t2('pairs_title'),
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 4),
-          Text(t2('otc_note'),
-              style: const TextStyle(fontSize: 12, color: Colors.white54)),
-          const SizedBox(height: 8),
-          TextField(
-            onChanged: (v) => setState(() => q = v.trim()),
-            decoration: InputDecoration(
-              hintText: t2('pair_search'),
-              prefixIcon: const Icon(Icons.search),
-              isDense: true,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Expanded(child: body),
-        ]),
       ),
     );
   }
