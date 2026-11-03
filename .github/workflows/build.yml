@@ -58,7 +58,20 @@ jobs:
 
       - run: flutter pub get
 
-      - run: flutter build apk --release
+      - name: Build APK
+        run: |
+          set +e
+          flutter build apk --release 2>&1 | tee /tmp/build.log
+          code=${PIPESTATUS[0]}
+          if [ "$code" -ne 0 ]; then
+            echo ""
+            echo "######## ERRORS SUMMARY ########"
+            grep -n -E "Error:|error:|e: file|What went wrong" /tmp/build.log | head -30
+            echo "---- details ----"
+            grep -n -A 12 "What went wrong" /tmp/build.log | head -40
+            echo "######## END ########"
+          fi
+          exit $code
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
