@@ -60,27 +60,10 @@ class PoProbe {
     return r?.group(1) ?? '?';
   }
 
-  static void _assets(List<int> bytes, void Function(String) log) {
-    try {
-      final j = jsonDecode(utf8.decode(bytes, allowMalformed: true));
-      if (j is! List) return;
-      var otc = 0, flag = 0;
-      final names = <String>[];
-      for (final a in j) {
-        if (a is List && a.length > 14 && a[1] is String) {
-          final s = a[1] as String;
-          if (s.endsWith('_otc')) {
-            otc++;
-            if (a[14] == true) flag++;
-            if (names.length < 12) names.add('$s(${a[5]}%)');
-          }
-        }
-      }
-      log('أصول: ${j.length} | OTC: $otc | flag14=true: $flag');
-      log(names.join('  '));
-    } catch (_) {
-      log('تعذر تحليل قائمة الأصول');
-    }
+  static String _hm(num sec) {
+    final d = DateTime.fromMillisecondsSinceEpoch(sec.toInt() * 1000, isUtc: true);
+    String t(int v) => v.toString().padLeft(2, '0');
+    return '${d.month}/${d.day} ${t(d.hour)}:${t(d.minute)}';
   }
 
   static Future<void> run(String ssid, void Function(String) log) async {
@@ -117,28 +100,16 @@ class PoProbe {
       return;
     }
     final WebSocket sock = ws;
-    final seen = <String, int>{};
-    final binSeen = <String, int>{};
     String? lastEv;
-    var symSent = false;
-    var histSent = false;
+    var step = 0;
+    num? tickTs;
+    int? lastTime;
     final done = Completer<void>();
 
-    void sendSym() {
-      if (symSent) return;
-      symSent = true;
-      sock.add('42["changeSymbol",{"asset":"EURUSD_otc","period":60}]');
-      log('→ changeSymbol EURUSD_otc');
-    }
-
-    void sendHist() {
-      if (histSent) return;
-      histSent = true;
-      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-      final idx = int.parse('${now}123');
-      sock.add(
-          '42["loadHistoryPeriod",{"asset":"EURUSD_otc","time":$now,"index":$idx,"offset":9000,"period":60}]');
-      log('→ loadHistoryPeriod EURUSD_otc 60s');
+    void ask(int endSec, int win, String label) {
+      log('→ $label end=${_hm(endSec)} offset=$win');
+      sock.add('42["loadHistoryPeriod",{"asset":"EURUSD_otc","time":$endSec,'
+          '"index":${endSec * 1000 + 123},"offset":$win,"period":60}]');
     }
 
     final sub = sock.listen((m) {
@@ -149,39 +120,64 @@ class PoProbe {
             return;
           }
           if (m.startsWith('0')) {
-            log('✔ handshake');
             sock.add('40');
             return;
           }
           if (m.startsWith('40')) {
-            log('✔ socket.io → auth');
             sock.add(auth);
             return;
           }
           final ev = _event(m);
-          seen[ev] = (seen[ev] ?? 0) + 1;
           lastEv = m.contains('_placeholder') ? ev : null;
-          if (seen[ev] == 1 && !m.contains('_placeholder')) {
-            log('حدث/event: $ev | ${_redact(_trunc(m, 300), ssid)}');
-          }
           if (ev == 'successauth') {
-            sendSym();
-            Timer(const Duration(seconds: 3), sendHist);
+            sock.add('42["changeSymbol",{"asset":"EURUSD_otc","period":60}]');
+            log('✔ auth → changeSymbol');
           }
         } else if (m is List<int>) {
-          final label = lastEv ?? '?';
-          binSeen[label] = (binSeen[label] ?? 0) + 1;
-          if (binSeen[label] == 1) {
-            if (label == 'updateAssets') {
-              _assets(m, log);
-            } else {
-              final txt = utf8.decode(m, allowMalformed: true);
-              log('[$label] ${m.length}B | ${_redact(_trunc(txt, 420), ssid)}');
+          final ev = lastEv;
+          lastEv = null;
+          if (ev == null) return;
+          if (ev == 'updateStream') {
+            final j = jsonDecode(utf8.decode(m, allowMalformed: true));
+            if (j is List && j.isNotEmpty && j[0] is List) {
+              final t = (j[0] as List)[1];
+              if (t is num && tickTs == null) {
+                tickTs = t;
+                final devSec = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+                log('tick=${_hm(t)} | device=${_hm(devSec)} | diff=${(t - devSec).round()}s');
+                Timer(const Duration(milliseconds: 500), () {
+                  ask(t.toInt(), 9000, 'page0 (time=tick)');
+                  step = 1;
+                });
+              }
+            }
+          } else if (ev == 'loadHistoryPeriodFast') {
+            final j = jsonDecode(utf8.decode(m, allowMalformed: true));
+            if (j is Map && j['data'] is List) {
+              final d = j['data'] as List;
+              if (d.isEmpty) {
+                log('page$step: 0 candles');
+              } else {
+                final first = d.first['time'];
+                final lastT = d.last['time'];
+                log('page$step: ${d.length} candles | first=${_hm(first)} | last=${_hm(lastT)} | index=${j['index']}');
+                lastTime = (first as num).toInt();
+              }
+              if (step == 1 && lastTime != null) {
+                step = 2;
+                ask(lastTime!, 9000, 'page1 (time=first)');
+              } else if (step == 2 && lastTime != null) {
+                step = 3;
+                ask(lastTime! - 60, 9000, 'page2 (time=first-60)');
+              } else {
+                if (!done.isCompleted) done.complete();
+              }
             }
           }
-          lastEv = null;
         }
-      } catch (_) {}
+      } catch (e) {
+        log('! ${e.runtimeType}');
+      }
     }, onDone: () {
       log('× ${_t('أُغلق الاتصال', 'Connexion fermée', 'Connection closed')}');
       if (!done.isCompleted) done.complete();
@@ -190,9 +186,7 @@ class PoProbe {
       if (!done.isCompleted) done.complete();
     });
 
-    Timer(const Duration(seconds: 6), sendSym);
-    Timer(const Duration(seconds: 9), sendHist);
-    Timer(const Duration(seconds: 18), () {
+    Timer(const Duration(seconds: 30), () {
       if (!done.isCompleted) done.complete();
     });
     await done.future;
@@ -200,15 +194,7 @@ class PoProbe {
     try {
       await sock.close();
     } catch (_) {}
-    log('— ${_t('الملخص', 'Résumé', 'Summary')} —');
-    if (seen.isEmpty) {
-      log(_t('لم تصل أي رسائل بعد المصافحة', 'Aucun message reçu après la poignée de main',
-          'No messages received after handshake'));
-    } else {
-      for (final e in seen.entries) {
-        log('${e.key} × ${e.value}');
-      }
-    }
+    log('— ${_t('انتهى', 'Terminé', 'Done')} —');
   }
 }
 
