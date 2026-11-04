@@ -23,6 +23,19 @@ jobs:
         with:
           channel: stable
 
+      - name: Restore signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/signing
+          key: signing-key-v1
+
+      - name: Create signing key if missing
+        run: |
+          mkdir -p ~/signing
+          if [ ! -f ~/signing/upload.jks ]; then
+            keytool -genkeypair -keystore ~/signing/upload.jks -storetype JKS -keyalg RSA -keysize 2048 -validity 10000 -alias upload -storepass signalspro -keypass signalspro -dname "CN=Signals Pro, O=Personal"
+          fi
+
       - name: Generate Android scaffold
         run: |
           flutter create --platforms=android --org com.farid.signals --project-name signals_pro /tmp/scaffold
@@ -54,6 +67,34 @@ jobs:
                   s = s.replace('compileOptions {', 'compileOptions {\n        coreLibraryDesugaringEnabled true', 1)
                   s += "\ndependencies {\n    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'\n}\n"
                   open(grv, 'w').write(s)
+          PY
+
+      - name: Patch Gradle for fixed signing
+        run: |
+          python3 - <<'PY'
+          import os
+          kts = 'android/app/build.gradle.kts'
+          grv = 'android/app/build.gradle'
+          if os.path.exists(kts):
+              s = open(kts).read()
+              old = 'signingConfigs.getByName("debug")'
+              if old in s and 'create("release")' not in s:
+                  blk = 'signingConfigs { create("release") { storeFile = file("/home/runner/signing/upload.jks"); storePassword = "signalspro"; keyAlias = "upload"; keyPassword = "signalspro" } }\n    '
+                  i = s.find('buildTypes {')
+                  if i > 0:
+                      s = s[:i] + blk + s[i:]
+                      s = s.replace(old, 'signingConfigs.getByName("release")')
+                      open(kts, 'w').write(s)
+          elif os.path.exists(grv):
+              s = open(grv).read()
+              old = 'signingConfig signingConfigs.debug'
+              if old in s and 'release {\n            storeFile' not in s:
+                  blk = "signingConfigs { release { storeFile file('/home/runner/signing/upload.jks'); storePassword 'signalspro'; keyAlias 'upload'; keyPassword 'signalspro' } }\n    "
+                  i = s.find('buildTypes {')
+                  if i > 0:
+                      s = s[:i] + blk + s[i:]
+                      s = s.replace(old, 'signingConfig signingConfigs.release')
+                      open(grv, 'w').write(s)
           PY
 
       - run: flutter pub get
