@@ -1,40 +1,33 @@
 === DART ERRORS ===
-102:lib/main.dart:4:8: Error: Error when reading 'lib/engine/monitor.dart': No such file or directory
-105:lib/notify_page.dart:2:8: Error: Error when reading 'lib/engine/monitor.dart': No such file or directory
-108:lib/signals_page.dart:4:8: Error: Error when reading 'lib/engine/monitor.dart': No such file or directory
-111:lib/main.dart:137:5: Error: The getter 'Monitor' isn't defined for the type '_ShellState'.
-116:lib/notify_page.dart:33:5: Error: The getter 'Monitor' isn't defined for the type '_NotifyPageState'.
-121:lib/notify_page.dart:34:5: Error: The getter 'Monitor' isn't defined for the type '_NotifyPageState'.
-126:lib/notify_page.dart:40:5: Error: The getter 'Monitor' isn't defined for the type '_NotifyPageState'.
-131:lib/notify_page.dart:50:13: Error: The getter 'Notifier' isn't defined for the type '_NotifyPageState'.
-136:lib/notify_page.dart:51:25: Error: The getter 'Monitor' isn't defined for the type '_NotifyPageState'.
-141:lib/notify_page.dart:54:13: Error: The getter 'Monitor' isn't defined for the type '_NotifyPageState'.
-146:lib/notify_page.dart:60:9: Error: The getter 'Monitor' isn't defined for the type '_NotifyPageState'.
-151:lib/notify_page.dart:70:22: Error: The getter 'Monitor' isn't defined for the type '_NotifyPageState'.
-156:lib/notify_page.dart:71:11: Error: The getter 'Monitor' isn't defined for the type '_NotifyPageState'.
-161:lib/notify_page.dart:71:45: Error: The getter 'Monitor' isn't defined for the type '_NotifyPageState'.
-166:lib/notify_page.dart:76:11: Error: The getter 'Monitor' isn't defined for the type '_NotifyPageState'.
-171:lib/notify_page.dart:77:19: Error: The getter 'Monitor' isn't defined for the type '_NotifyPageState'.
-176:lib/notify_page.dart:109:15: Error: The getter 'Monitor' isn't defined for the type '_NotifyPageState'.
-181:lib/notify_page.dart:195:23: Error: The getter 'Notifier' isn't defined for the type '_NotifyPageState'.
-186:lib/notify_page.dart:206:23: Error: The getter 'Notifier' isn't defined for the type '_NotifyPageState'.
-191:lib/notify_page.dart:217:19: Error: The getter 'Notifier' isn't defined for the type '_NotifyPageState'.
-196:lib/signals_page.dart:48:5: Error: The getter 'Monitor' isn't defined for the type '_SignalsPageState'.
-201:lib/signals_page.dart:64:5: Error: The getter 'Monitor' isn't defined for the type '_SignalsPageState'.
+102:lib/engine/monitor.dart:49:11: Error: The getter 'Notifier' isn't defined for the type 'Monitor'.
+107:lib/engine/monitor.dart:68:13: Error: The getter 'FgService' isn't defined for the type 'Monitor'.
+112:lib/engine/monitor.dart:69:13: Error: The getter 'FgService' isn't defined for the type 'Monitor'.
+117:lib/engine/monitor.dart:80:5: Error: 'PoClient' is imported from both 'package:signals_pro/engine/notify.dart' and 'package:signals_pro/engine/po_client.dart'.
+120:lib/engine/monitor.dart:81:58: Error: 'PoClient' is imported from both 'package:signals_pro/engine/notify.dart' and 'package:signals_pro/engine/po_client.dart'.
+123:lib/engine/monitor.dart:83:11: Error: The getter 'FgService' isn't defined for the type 'Monitor'.
+128:lib/engine/monitor.dart:97:11: Error: The getter 'FgService' isn't defined for the type 'Monitor'.
+133:lib/engine/monitor.dart:102:58: Error: 'PoClient' is imported from both 'package:signals_pro/engine/notify.dart' and 'package:signals_pro/engine/po_client.dart'.
+136:lib/engine/monitor.dart:142:37: Error: 'PoClient' is imported from both 'package:signals_pro/engine/notify.dart' and 'package:signals_pro/engine/po_client.dart'.
+139:lib/engine/monitor.dart:190:35: Error: 'PoClient' is imported from both 'package:signals_pro/engine/notify.dart' and 'package:signals_pro/engine/po_client.dart'.
+142:lib/engine/monitor.dart:217:11: Error: The getter 'Notifier' isn't defined for the type 'Monitor'.
+147:lib/notify_page.dart:50:13: Error: The getter 'Notifier' isn't defined for the type '_NotifyPageState'.
+152:lib/notify_page.dart:195:23: Error: The getter 'Notifier' isn't defined for the type '_NotifyPageState'.
+157:lib/notify_page.dart:206:23: Error: The getter 'Notifier' isn't defined for the type '_NotifyPageState'.
+162:lib/notify_page.dart:217:19: Error: The getter 'Notifier' isn't defined for the type '_NotifyPageState'.
 === GRADLE ===
-211:* What went wrong:
-212-Execution failed for task ':app:compileFlutterBuildRelease'.
-213-> Process 'command '/opt/hostedtoolcache/flutter/stable-3.47.9-x64/flutter/bin/flutter'' finished with non-zero exit value 1
-214-
-215-* Try:
-216-> Run with --stacktrace option to get the stack trace.
-217-> Run with --info or --debug option to get more log output.
-218-> Run with --scan to get full insights from a Build Scan (powered by Develocity).
-219-> Get more help at https://help.gradle.org.
-220-
-221-BUILD FAILED in 4m 52s
-222-Running Gradle task 'assembleRelease'...                          293.3s
-223-Gradle task assembleRelease failed with exit code 1
+172:* What went wrong:
+173-Execution failed for task ':app:compileFlutterBuildRelease'.
+174-> Process 'command '/opt/hostedtoolcache/flutter/stable-3.47.9-x64/flutter/bin/flutter'' finished with non-zero exit value 1
+175-
+176-* Try:
+177-> Run with --stacktrace option to get the stack trace.
+178-> Run with --info or --debug option to get more log output.
+179-> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+180-> Get more help at https://help.gradle.org.
+181-
+182-BUILD FAILED in 2m 24s
+183-Running Gradle task 'assembleRelease'...                          145.3s
+184-Gradle task assembleRelease failed with exit code 1
 === OTHER ===
 101:If you are a plugin author, please migrate your plugin to Built-in Kotlin using this guide: https://docs.flutter.dev/release/breaking-changes/migrate-to-built-in-kotlin/for-plugin-authors
-212:Execution failed for task ':app:compileFlutterBuildRelease'.
+173:Execution failed for task ':app:compileFlutterBuildRelease'.
