@@ -31,9 +31,10 @@ class PoClient {
   String? _histAsset;
   String? _sym;
   final List<PoAsset> assets = [];
+  final Map<int, double> _ticks = <int, double>{};
 
-  // offsetMs = وقت منصة الأسعار اللحظية - ساعة الجهاز
-  // shiftMs  = الفرق الثابت بين توقيت الأسعار والتوقيت الحقيقي (ساعتان)
+  // offsetMs = وقت أسعار المنصة - ساعة الجهاز
+  // shiftMs  = الفرق الثابت بين توقيت المنصة والتوقيت الحقيقي (ساعتان)
   // skewMs   = خطأ ساعة الجهاز عن الوقت الحقيقي
   int offsetMs = 0;
   int shiftMs = 0;
@@ -117,6 +118,7 @@ class PoClient {
       authed = false;
       gotTick = false;
       _sym = null;
+      _ticks.clear();
       assets.clear();
       _authC = Completer<bool>();
       sock.listen(
@@ -169,6 +171,16 @@ class PoClient {
     } catch (_) {}
   }
 
+  void _addTick(num ts, num price) {
+    _ticks[(ts * 1000).round()] = price.toDouble();
+    if (_ticks.length > 9000) {
+      final ks = _ticks.keys.toList()..sort();
+      for (var i = 0; i < 3000; i++) {
+        _ticks.remove(ks[i]);
+      }
+    }
+  }
+
   void _handle(String ev, List<int> bytes) {
     dynamic j;
     try {
@@ -181,14 +193,30 @@ class PoClient {
     } else if (ev == 'updateAssets') {
       _parseAssets(j);
     } else if (ev == 'updateStream') {
-      if (j is List && j.isNotEmpty && j[0] is List && (j[0] as List).length > 1) {
-        final t = (j[0] as List)[1];
-        if (t is num) {
-          final raw = (t * 1000).round() - DateTime.now().millisecondsSinceEpoch;
-          offsetMs = raw;
-          shiftMs = (raw / 1800000).round() * 1800000;
-          skewMs = raw - shiftMs;
-          gotTick = true;
+      if (j is List) {
+        var calibrated = false;
+        for (final e in j) {
+          if (e is List && e.length > 2 && e[1] is num && e[2] is num) {
+            final t = e[1] as num;
+            if (!calibrated) {
+              final raw =
+                  (t * 1000).round() - DateTime.now().millisecondsSinceEpoch;
+              offsetMs = raw;
+              shiftMs = (raw / 1800000).round() * 1800000;
+              skewMs = raw - shiftMs;
+              gotTick = true;
+              calibrated = true;
+            }
+            if (e[0] == _sym) _addTick(t, e[2] as num);
+          }
+        }
+      }
+    } else if (ev == 'updateHistoryNewFast') {
+      if (j is Map && j['asset'] == _sym && j['history'] is List) {
+        for (final e in (j['history'] as List)) {
+          if (e is List && e.length > 1 && e[0] is num && e[1] is num) {
+            _addTick(e[0] as num, e[1] as num);
+          }
         }
       }
     } else if (ev == 'loadHistoryPeriodFast' || ev == 'loadHistoryPeriod') {
@@ -238,16 +266,21 @@ class PoClient {
     final ws = _ws;
     if (ws == null) return const Fetch<List<Candle>>(null, 'na_source_error');
     if (_sym != sym) {
-      ws.add('42["changeSymbol",{"asset":"$sym","period":$period}]');
+      _ticks.clear();
       _sym = sym;
-      await Future.delayed(const Duration(milliseconds: 600));
+      ws.add('42["changeSymbol",{"asset":"$sym","period":$period}]');
+      await Future.delayed(const Duration(milliseconds: 900));
     }
-    for (var i = 0; i < 15 && !gotTick; i++) {
+    for (var i = 0; i < 15 && (!gotTick || _ticks.isEmpty); i++) {
       await Future.delayed(const Duration(milliseconds: 200));
     }
+
     final shiftSec = shiftMs ~/ 1000;
-    var endSec = (DateTime.now().millisecondsSinceEpoch + skewMs) ~/ 1000 + shiftSec;
+    final nowTrueMs = DateTime.now().millisecondsSinceEpoch + skewMs;
+    var endSec = nowTrueMs ~/ 1000 + shiftSec;
     final win = period * 150;
+
+    // 1) التاريخ الجاهز (توقيت المنصة)
     final raw = <int, List<double>>{};
     for (var page = 0; page < 8; page++) {
       final r = await _page(ws, sym, period, endSec, win);
@@ -270,17 +303,44 @@ class PoClient {
         }
       }
       if (raw.length >= count || added == 0) break;
-      endSec = oldest + shiftSec;
+      endSec = oldest - period;
     }
     if (raw.isEmpty) return const Fetch<List<Candle>>(null, 'na_source_error');
-    final nowTrueMs = DateTime.now().millisecondsSinceEpoch + skewMs;
+
     final keys = raw.keys.toList()..sort();
+    final lastHist = keys.last;
     final out = <Candle>[];
     for (final ts in keys) {
       final v = raw[ts]!;
-      out.add(Candle(ts * 1000 - skewMs, v[0], v[1], v[2], v[3],
-          closed: (ts + period) * 1000 <= nowTrueMs));
+      out.add(Candle((ts - shiftSec) * 1000 - skewMs, v[0], v[1], v[2], v[3],
+          closed: (ts - shiftSec + period) * 1000 <= nowTrueMs));
     }
+
+    // 2) الشموع الأخيرة من الأسعار اللحظية (بعد آخر شمعة جاهزة)
+    final tk = _ticks.keys.toList()..sort();
+    final buckets = <int, List<double>>{};
+    for (final k in tk) {
+      final p = _ticks[k]!;
+      final b = (k ~/ (period * 1000)) * period;
+      final cur = buckets[b];
+      if (cur == null) {
+        buckets[b] = [p, p, p, p, k / 1000.0];
+      } else {
+        if (p > cur[1]) cur[1] = p;
+        if (p < cur[2]) cur[2] = p;
+        cur[3] = p;
+      }
+    }
+    final bk = buckets.keys.toList()..sort();
+    for (final b in bk) {
+      if (b <= lastHist) continue;
+      final v = buckets[b]!;
+      if (v[4] > b + 3) continue; // شمعة ناقصة البداية
+      if ((b - shiftSec + period) * 1000 > nowTrueMs) continue; // لم تُغلق بعد
+      out.add(Candle((b - shiftSec) * 1000 - skewMs, v[0], v[1], v[2], v[3],
+          closed: true));
+    }
+    out.sort((a, b) => a.t.compareTo(b.t));
     return Fetch<List<Candle>>(out, null);
   }
 }
