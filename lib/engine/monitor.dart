@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../history_page.dart';
 import '../l10n.dart';
 import '../l10n2.dart';
+import 'cfg.dart';
 import 'datasource.dart';
 import 'indicators.dart';
 import 'notify.dart';
@@ -30,7 +31,7 @@ class Monitor {
 
   List<String> pairs = <String>[];
   int duration = 300;
-  int lead = 60; // 60 = الدخول بعد دقيقة من الإشارة، 0 = الشمعة التالية فوراً
+  int lead = 60; // 0 = الدقيقة التالية للإشارة، 60 = بعدها بدقيقة
   DateTime? lastCycle;
 
   Timer? _timer;
@@ -42,6 +43,7 @@ class Monitor {
   Future<void> load() async {
     if (_loaded) return;
     _loaded = true;
+    await Cfg.load();
     final p = await SharedPreferences.getInstance();
     pairs = p.getStringList('mon_pairs') ?? <String>[];
     duration = p.getInt('mon_dur') ?? 300;
@@ -186,7 +188,10 @@ class Monitor {
         (h.endAt ?? 0) > now);
     if (dup) return '$pair: ${r.type} (${t2('sg_live')})';
 
-    final entryServer = lead >= 60 ? b + 60000 : b;
+    // الدخول: أقرب افتتاح دقيقة بعد انتهاء التحليل (+ دقيقة إن اخترت)
+    final sNow = now + PoClient.I.offsetMs;
+    final nextB = (sNow ~/ 60000 + 1) * 60000;
+    final entryServer = nextB + (lead >= 60 ? 60000 : 0);
     final entryMs = entryServer - PoClient.I.offsetMs;
     final expiryMs = entryMs + duration * 1000;
     final ind = '[AUTO] RSI ${r.rsi?.toStringAsFixed(1)} | ADX '
