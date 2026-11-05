@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'cfg.dart';
 import 'indicators.dart';
 import 'patterns.dart';
 
@@ -95,12 +96,12 @@ class Strategy {
 
   static _Snap? _snap(List<Candle> c) {
     final closes = c.map((e) => e.c).toList();
-    final e20 = Ind.ema(closes, 20).last;
-    final e50 = Ind.ema(closes, 50).last;
-    final r = Ind.rsi(closes, 14).last;
-    final a = Ind.atr(c, 14).last;
-    final ax = Ind.adx(c, 14).last;
-    final st = Ind.superTrend(c).dir.last;
+    final e20 = Ind.ema(closes, Cfg.ema1).last;
+    final e50 = Ind.ema(closes, Cfg.ema2).last;
+    final r = Ind.rsi(closes, Cfg.rsiP).last;
+    final a = Ind.atr(c, Cfg.atrP).last;
+    final ax = Ind.adx(c, Cfg.adxP).last;
+    final st = Ind.superTrend(c, p: Cfg.stP, m: Cfg.stM).dir.last;
     if (e20 == null ||
         e50 == null ||
         r == null ||
@@ -183,11 +184,10 @@ class Strategy {
     final oks = <Reason>[];
     var score = 0;
 
-    // الشروط الأساسية الإلزامية
     score += 1;
     oks.add(const Reason('ok_ema'));
 
-    final rsiOk = d == 1 ? e.rsi > 52 : e.rsi < 48;
+    final rsiOk = d == 1 ? e.rsi > Cfg.rsiUp : e.rsi < Cfg.rsiDown;
     if (rsiOk) {
       score += 1;
       oks.add(const Reason('ok_rsi'));
@@ -195,7 +195,7 @@ class Strategy {
       fails.add(Reason('blk_rsi', e.rsi.toStringAsFixed(1)));
     }
 
-    final adxOk = e.adx > 20;
+    final adxOk = e.adx > Cfg.adxMin;
     if (adxOk) {
       score += 1;
       oks.add(const Reason('ok_adx'));
@@ -211,12 +211,10 @@ class Strategy {
       fails.add(const Reason('blk_st'));
     }
 
-    // سوق عرضي: EMA متقاربان جداً
     if ((e.ema20 - e.ema50).abs() < 0.1 * e.atr) {
       fails.add(const Reason('blk_sideways'));
     }
 
-    // شمعة التأكيد المغلقة
     final lastDirOk = d == 1 ? e.lastBull : e.lastBear;
     if (!lastDirOk) fails.add(const Reason('blk_no_confirm'));
     final strong = d == 1
@@ -227,7 +225,6 @@ class Strategy {
       oks.add(const Reason('ok_candle'));
     }
 
-    // الدعم والمقاومة
     final zone = d == 1 ? e.lv.resistance : e.lv.support;
     final dist = d == 1 ? e.lv.resistDistAtr : e.lv.supportDistAtr;
     if (zone == null || dist == null || dist >= 1.5) {
@@ -240,7 +237,6 @@ class Strategy {
       fails.add(const Reason('blk_level_near'));
     }
 
-    // إعادة اختبار أو رفض أو اختراق كاذب
     final retest = d == 1
         ? (e.lv.bullRetest || e.lv.bullRej || e.lv.bullFalseBreak)
         : (e.lv.bearRetest || e.lv.bearRej || e.lv.bearFalseBreak);
@@ -249,7 +245,6 @@ class Strategy {
       oks.add(const Reason('ok_retest'));
     }
 
-    // توافق الإطارات الأعلى
     for (final n in tfs.skip(1)) {
       final dn = snaps[n]!.dir;
       if (dn == -d) {
@@ -261,17 +256,14 @@ class Strategy {
       }
     }
 
-    // حركة مستهلكة
     if ((e.price - e.ema20).abs() > 2.5 * e.atr) {
       fails.add(const Reason('blk_extended'));
     }
 
-    // شمعة اندفاع متأخرة
     if (e.lastBody > 2 * e.atr) {
       fails.add(const Reason('blk_late'));
     }
 
-    // تكرار الإشارة نفسها دون تغير حقيقي
     final dirStr = d == 1 ? 'UP' : 'DOWN';
     if (last != null &&
         last.dir == dirStr &&
@@ -290,7 +282,7 @@ class Strategy {
     }
 
     if (fails.isNotEmpty) return wait(fails, score, sr: srKey);
-    if (score < 8) {
+    if (score < Cfg.minScore) {
       return wait([Reason('wait_score', '$score')], score, sr: srKey);
     }
 
