@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'indicators.dart';
 import 'po_probe.dart';
 
@@ -15,6 +16,12 @@ class PoAsset {
   final int payout;
   final bool open;
   const PoAsset(this.symbol, this.name, this.payout, this.open);
+}
+
+class _PageRes {
+  final int oldest;
+  final int added;
+  const _PageRes(this.oldest, this.added);
 }
 
 class PoClient {
@@ -32,6 +39,13 @@ class PoClient {
   String? _sym;
   final List<PoAsset> assets = [];
   final Map<int, double> _ticks = <int, double>{};
+  final Map<String, Map<int, List<double>>> _hist =
+      <String, Map<int, List<double>>>{};
+
+  final ValueNotifier<bool> connected = ValueNotifier<bool>(false);
+  double? lastPrice;
+  int lastTickMs = 0;
+  String? get symbol => _sym;
 
   // offsetMs = وقت أسعار المنصة - ساعة الجهاز
   // shiftMs  = الفرق الثابت بين توقيت المنصة والتوقيت الحقيقي (ساعتان)
@@ -60,6 +74,7 @@ class PoClient {
     } catch (_) {}
     _ws = null;
     authed = false;
+    connected.value = false;
   }
 
   void _onClosed(WebSocket sock) {
@@ -67,6 +82,7 @@ class PoClient {
       _ws = null;
       authed = false;
       _sym = null;
+      connected.value = false;
     }
     if (_authC != null && !_authC!.isCompleted) _authC!.complete(false);
     if (_histC != null && !_histC!.isCompleted) _histC!.complete(null);
@@ -74,7 +90,19 @@ class PoClient {
 
   void _markAuthed() {
     authed = true;
+    connected.value = true;
     if (_authC != null && !_authC!.isCompleted) _authC!.complete(true);
+  }
+
+  void clearCache() {
+    _hist.clear();
+    _ticks.clear();
+  }
+
+  Future<String?> reconnect() async {
+    _close();
+    clearCache();
+    return connect();
   }
 
   Future<String?> connect() async {
@@ -207,7 +235,11 @@ class PoClient {
               gotTick = true;
               calibrated = true;
             }
-            if (e[0] == _sym) _addTick(t, e[2] as num);
+            if (e[0] == _sym) {
+              _addTick(t, e[2] as num);
+              lastPrice = (e[2] as num).toDouble();
+              lastTickMs = DateTime.now().millisecondsSinceEpoch;
+            }
           }
         }
       }
@@ -243,9 +275,22 @@ class PoClient {
       ..addAll(out);
   }
 
-  Future<Fetch<List<Candle>>> candles(String sym, int period,
-          {int count = 140}) =>
-      _serial(() => _candles(sym, period, count));
+  Future<String?> _ready(String sym) async {
+    final err = await connect();
+    if (err != null) return err;
+    final ws = _ws;
+    if (ws == null) return 'na_source_error';
+    if (_sym != sym) {
+      _ticks.clear();
+      _sym = sym;
+      ws.add('42["changeSymbol",{"asset":"$sym","period":60}]');
+      await Future.delayed(const Duration(milliseconds: 900));
+    }
+    for (var i = 0; i < 15 && (!gotTick || _ticks.isEmpty); i++) {
+      await Future.delayed(const Duration(milliseconds: 200));
+    }
+    return null;
+  }
 
   Future<Map<String, dynamic>?> _page(
       WebSocket ws, String sym, int period, int endSec, int win) async {
@@ -260,52 +305,71 @@ class PoClient {
     }
   }
 
+  Future<_PageRes?> _pullPage(WebSocket ws, String sym, int period, int endSec,
+      int win, Map<int, List<double>> raw) async {
+    final r = await _page(ws, sym, period, endSec, win);
+    if (r == null) return null;
+    final d = r['data'];
+    if (d is! List || d.isEmpty) return null;
+    var oldest = 1 << 62;
+    var added = 0;
+    for (final e in d) {
+      if (e is! Map) continue;
+      final t = e['time'], o = e['open'], h = e['high'], l = e['low'], c = e['close'];
+      if (t is! num || o is! num || h is! num || l is! num || c is! num) {
+        continue;
+      }
+      final ts = t.toInt();
+      if (ts < oldest) oldest = ts;
+      if (!raw.containsKey(ts)) added++;
+      raw[ts] = [o.toDouble(), h.toDouble(), l.toDouble(), c.toDouble()];
+    }
+    return _PageRes(oldest, added);
+  }
+
+  Future<Fetch<List<Candle>>> candles(String sym, int period,
+          {int count = 140}) =>
+      _serial(() => _candles(sym, period, count));
+
   Future<Fetch<List<Candle>>> _candles(String sym, int period, int count) async {
-    final err = await connect();
+    final err = await _ready(sym);
     if (err != null) return Fetch<List<Candle>>(null, err);
     final ws = _ws;
     if (ws == null) return const Fetch<List<Candle>>(null, 'na_source_error');
-    if (_sym != sym) {
-      _ticks.clear();
-      _sym = sym;
-      ws.add('42["changeSymbol",{"asset":"$sym","period":$period}]');
-      await Future.delayed(const Duration(milliseconds: 900));
-    }
-    for (var i = 0; i < 15 && (!gotTick || _ticks.isEmpty); i++) {
-      await Future.delayed(const Duration(milliseconds: 200));
-    }
-
+    final raw = _hist.putIfAbsent('$sym|$period', () => <int, List<double>>{});
     final shiftSec = shiftMs ~/ 1000;
     final nowTrueMs = DateTime.now().millisecondsSinceEpoch + skewMs;
     var endSec = nowTrueMs ~/ 1000 + shiftSec;
-    final win = period * 150;
 
-    // 1) التاريخ الجاهز (توقيت المنصة)
-    final raw = <int, List<double>>{};
-    for (var page = 0; page < 8; page++) {
-      final r = await _page(ws, sym, period, endSec, win);
-      if (r == null) break;
-      final d = r['data'];
-      if (d is! List || d.isEmpty) break;
-      var oldest = 1 << 62;
-      var added = 0;
-      for (final e in d) {
-        if (e is! Map) continue;
-        final t = e['time'], o = e['open'], h = e['high'], l = e['low'], c = e['close'];
-        if (t is! num || o is! num || h is! num || l is! num || c is! num) {
+    if (raw.isNotEmpty) {
+      final newest = raw.keys.reduce((a, b) => a > b ? a : b);
+      if (endSec - newest > period * 8) raw.clear();
+    }
+
+    if (raw.length >= count) {
+      await _pullPage(ws, sym, period, endSec, period * 8, raw);
+    } else {
+      var fails = 0;
+      for (var page = 0; page < 8 && raw.length < count; page++) {
+        final r = await _pullPage(ws, sym, period, endSec, period * 150, raw);
+        if (r == null) {
+          fails++;
+          if (fails >= 2) break;
           continue;
         }
-        final ts = t.toInt();
-        if (ts < oldest) oldest = ts;
-        if (!raw.containsKey(ts)) {
-          raw[ts] = [o.toDouble(), h.toDouble(), l.toDouble(), c.toDouble()];
-          added++;
-        }
+        if (r.added == 0) break;
+        endSec = r.oldest - period;
       }
-      if (raw.length >= count || added == 0) break;
-      endSec = oldest - period;
     }
     if (raw.isEmpty) return const Fetch<List<Candle>>(null, 'na_source_error');
+
+    final over = raw.length - 700;
+    if (over > 0) {
+      final ks = raw.keys.toList()..sort();
+      for (var i = 0; i < over; i++) {
+        raw.remove(ks[i]);
+      }
+    }
 
     final keys = raw.keys.toList()..sort();
     final lastHist = keys.last;
@@ -316,7 +380,7 @@ class PoClient {
           closed: (ts - shiftSec + period) * 1000 <= nowTrueMs));
     }
 
-    // 2) الشموع الأخيرة من الأسعار اللحظية (بعد آخر شمعة جاهزة)
+    // الشموع الأخيرة من الأسعار اللحظية (بعد آخر شمعة جاهزة)
     final tk = _ticks.keys.toList()..sort();
     final buckets = <int, List<double>>{};
     for (final k in tk) {
@@ -335,12 +399,51 @@ class PoClient {
     for (final b in bk) {
       if (b <= lastHist) continue;
       final v = buckets[b]!;
-      if (v[4] > b + 3) continue; // شمعة ناقصة البداية
-      if ((b - shiftSec + period) * 1000 > nowTrueMs) continue; // لم تُغلق بعد
+      if (v[4] > b + 3) continue;
+      if ((b - shiftSec + period) * 1000 > nowTrueMs) continue;
       out.add(Candle((b - shiftSec) * 1000 - skewMs, v[0], v[1], v[2], v[3],
           closed: true));
     }
     out.sort((a, b) => a.t.compareTo(b.t));
+    return Fetch<List<Candle>>(out, null);
+  }
+
+  /// تاريخ عميق لشموع الدقيقة (للاختبار التاريخي).
+  Future<Fetch<List<Candle>>> deepHistory(
+          String sym, int target, void Function(int) onProgress) =>
+      _serial(() => _deep(sym, target, onProgress));
+
+  Future<Fetch<List<Candle>>> _deep(
+      String sym, int target, void Function(int) onProgress) async {
+    const period = 60;
+    final err = await _ready(sym);
+    if (err != null) return Fetch<List<Candle>>(null, err);
+    final ws = _ws;
+    if (ws == null) return const Fetch<List<Candle>>(null, 'na_source_error');
+    final shiftSec = shiftMs ~/ 1000;
+    final nowTrueMs = DateTime.now().millisecondsSinceEpoch + skewMs;
+    var endSec = nowTrueMs ~/ 1000 + shiftSec;
+    final raw = <int, List<double>>{};
+    var fails = 0;
+    for (var page = 0; page < 90 && raw.length < target; page++) {
+      final r = await _pullPage(ws, sym, period, endSec, period * 150, raw);
+      if (r == null) {
+        fails++;
+        if (fails >= 3) break;
+        continue;
+      }
+      if (r.added == 0) break;
+      endSec = r.oldest - period;
+      onProgress(raw.length);
+    }
+    if (raw.isEmpty) return const Fetch<List<Candle>>(null, 'na_source_error');
+    final keys = raw.keys.toList()..sort();
+    final out = <Candle>[];
+    for (final ts in keys) {
+      final v = raw[ts]!;
+      out.add(Candle((ts - shiftSec) * 1000 - skewMs, v[0], v[1], v[2], v[3],
+          closed: (ts - shiftSec + period) * 1000 <= nowTrueMs));
+    }
     return Fetch<List<Candle>>(out, null);
   }
 }
