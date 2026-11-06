@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'engine/cfg.dart';
 import 'engine/datasource.dart';
 import 'engine/indicators.dart';
 import 'engine/monitor.dart';
@@ -11,6 +12,7 @@ import 'notify_page.dart';
 import 'pair_sheet.dart';
 import 'settings_page.dart';
 import 'signals_page.dart';
+import 'strategy_page.dart';
 
 const kBg1 = Color(0xFF030A1F);
 const kBg2 = Color(0xFF07163F);
@@ -269,6 +271,9 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     langNotifier.addListener(_onLang);
+    Cfg.load().then((_) {
+      if (mounted) setState(() {});
+    });
     DataSource.resolvePending();
   }
 
@@ -690,6 +695,37 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  Widget _stratLine() {
+    final l = langNotifier.value;
+    final label = l == 'ar' ? 'الاستراتيجية' : (l == 'fr' ? 'Stratégie' : 'Strategy');
+    return InkWell(
+      onTap: () async {
+        await Navigator.of(context)
+            .push(MaterialPageRoute(builder: (_) => const StrategyPage()));
+        if (mounted) setState(() {});
+      },
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: _glass(kLine, r: 14),
+        child: Directionality(
+          textDirection: TextDirection.ltr,
+          child: Row(children: [
+            const Icon(Icons.tune, color: kCyan, size: 22),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text('$label: ${Cfg.activeLine()}',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 13)),
+            ),
+            const Icon(Icons.chevron_right, color: Colors.white54),
+          ]),
+        ),
+      ),
+    );
+  }
+
   Widget _signalCard(Analysis? a) {
     final t = a?.type ?? 'NONE';
     final c = tcolor(t);
@@ -842,12 +878,12 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  Widget _tfCell(String name, String v) {
+  Widget _tfCell(String name, String v, bool entry) {
     final up = v == 'UP', down = v == 'DOWN';
     final c = up ? kGreen : (down ? kRed : kGrey);
     String txt = up ? tr('tf_up') : (down ? tr('tf_down') : '—');
-    if (name == 'M1' && up) txt = tr('tf_buy');
-    if (name == 'M1' && down) txt = tr('tf_sell');
+    if (entry && up) txt = tr('tf_buy');
+    if (entry && down) txt = tr('tf_sell');
     return Expanded(
       child: Column(children: [
         Text(name,
@@ -866,6 +902,27 @@ class _HomePageState extends State<HomePage> {
         ),
       ]),
     );
+  }
+
+  Widget _tfRows(Analysis? a) {
+    final names = (a != null && a.tf.isNotEmpty)
+        ? a.tf.keys.toList()
+        : Strategy.tfsFor(duration);
+    if (names.isEmpty) return const SizedBox.shrink();
+    int mn(String t) => Strategy.tfMs[t] ?? 0;
+    final entry = names.reduce((x, y) => mn(x) <= mn(y) ? x : y);
+    final ordered = List<String>.from(names)
+      ..sort((x, y) => mn(y).compareTo(mn(x)));
+    final rows = <Widget>[];
+    for (var i = 0; i < ordered.length; i += 4) {
+      final end = i + 4 > ordered.length ? ordered.length : i + 4;
+      final chunk = ordered.sublist(i, end);
+      if (rows.isNotEmpty) rows.add(const SizedBox(height: 6));
+      rows.add(_box(Row(children: [
+        for (final n in chunk) _tfCell(n, a?.tf[n] ?? '', n == entry),
+      ])));
+    }
+    return Column(children: rows);
   }
 
   Widget _metric(IconData icon, Color ic, String label, String value, Color vc) {
@@ -906,8 +963,15 @@ class _HomePageState extends State<HomePage> {
         a != null && (a.type == 'UP' || a.type == 'DOWN' || a.type == 'WAIT');
     final stUp = a?.st == 'UP';
     final stDown = a?.st == 'DOWN';
-    final adxTxt = a?.adx != null ? a!.adx!.toStringAsFixed(1) : '—';
-    final rsiTxt = a?.rsi != null ? a!.rsi!.toStringAsFixed(1) : '—';
+    final adxTxt = !Cfg.useAdx
+        ? 'OFF'
+        : (a?.adx != null ? a!.adx!.toStringAsFixed(1) : '—');
+    final rsiTxt = !Cfg.useRsi
+        ? 'OFF'
+        : (a?.rsi != null ? a!.rsi!.toStringAsFixed(1) : '—');
+    final stTxt = !Cfg.useSt
+        ? 'OFF'
+        : (stUp ? tr('tf_up') : (stDown ? tr('tf_down') : '—'));
     final scoreTxt = real ? '${a.score}/10' : '—';
     return Container(
       padding: const EdgeInsets.all(12),
@@ -927,23 +991,22 @@ class _HomePageState extends State<HomePage> {
         Directionality(
           textDirection: TextDirection.ltr,
           child: Column(children: [
-            _box(Row(children: [
-              _tfCell('M15', a?.tf['M15'] ?? ''),
-              _tfCell('M5', a?.tf['M5'] ?? ''),
-              _tfCell('M1', a?.tf['M1'] ?? ''),
-            ])),
+            _tfRows(a),
             const SizedBox(height: 8),
             _box(Row(children: [
               _metric(Icons.star, kAmber, tr('m_score'), scoreTxt, kAmber),
               _metric(Icons.verified_user_outlined, kGreen, 'ADX', adxTxt,
-                  Colors.white),
-              _metric(Icons.show_chart, kCyan, 'RSI', rsiTxt, Colors.white),
+                  Cfg.useAdx ? Colors.white : kGrey),
+              _metric(Icons.show_chart, kCyan, 'RSI', rsiTxt,
+                  Cfg.useRsi ? Colors.white : kGrey),
               _metric(
                   Icons.multiline_chart,
                   kBlue,
                   'SuperTrend',
-                  stUp ? tr('tf_up') : (stDown ? tr('tf_down') : '—'),
-                  stUp ? kGreen : (stDown ? kRed : Colors.white)),
+                  stTxt,
+                  !Cfg.useSt
+                      ? kGrey
+                      : (stUp ? kGreen : (stDown ? kRed : Colors.white))),
             ])),
             const SizedBox(height: 8),
             _box(Row(children: [
@@ -958,10 +1021,10 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ]),
                   const SizedBox(height: 4),
-                  Text(a == null ? '—' : t2(a.sr),
+                  Text(a == null ? '—' : (Cfg.useSr ? t2(a.sr) : 'OFF'),
                       textAlign: TextAlign.center,
-                      style: const TextStyle(
-                          color: kCyan,
+                      style: TextStyle(
+                          color: Cfg.useSr ? kCyan : kGrey,
                           fontSize: 17,
                           fontWeight: FontWeight.bold)),
                 ]),
@@ -1047,6 +1110,8 @@ class _HomePageState extends State<HomePage> {
         ),
         const SizedBox(height: 14),
         _analyzeButton(),
+        const SizedBox(height: 10),
+        _stratLine(),
         const SizedBox(height: 14),
         if (preview)
           Padding(
