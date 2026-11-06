@@ -7,14 +7,19 @@ export 'po_client.dart' show Fetch;
 
 class DataSource {
   static const _s = FlutterSecureStorage();
+  static const _per = {
+    'M1': 60,
+    'M2': 120,
+    'M3': 180,
+    'M5': 300,
+    'M10': 600,
+    'M15': 900,
+    'M30': 1800,
+  };
 
-  static const _per = {'M1': 60, 'M5': 300, 'M15': 900, 'M30': 1800};
-
-  // الأسماء المعروضة: "EURUSD OTC" والمعرّف الفعلي: "EURUSD_otc"
   static String _sym(String label) => label.replaceAll(' OTC', '_otc');
   static String _label(String sym) => sym.replaceAll('_otc', ' OTC');
 
-  // مفتاح Twelve Data الاحتياطي (غير مستعمل في التحليل حالياً)
   static Future<String?> key() async {
     try {
       final k = await _s.read(key: 'td_key');
@@ -73,19 +78,25 @@ class DataSource {
       for (final r in all) {
         if (done >= 3) break;
         if (r.result != 'PENDING' || r.id == null) continue;
+        final auto = r.indicators.startsWith('[AUTO]');
         final secs = int.tryParse(r.duration) ?? 0;
-        final end = r.issuedAt + secs * 1000;
+        final end = auto
+            ? (r.endAt ?? r.issuedAt + secs * 1000)
+            : r.issuedAt + secs * 1000;
         if (now < end + 90000) continue;
-        if (r.price == null) {
+        if (!auto && r.price == null) {
           await HistoryDb.setResult(r.id!, 'UNVERIFIED', null, null);
           continue;
         }
         done++;
         final f = await candles(r.pair, 'M1', now, size: 300);
         if (f.data == null) continue;
+        final entryMs = end - secs * 1000;
         Candle? hit;
+        Candle? ent;
         for (final c in f.data!) {
-          if (c.t >= end) {
+          if (ent == null && auto && (c.t - entryMs).abs() <= 5000) ent = c;
+          if (c.t >= end - 5000) {
             hit = c;
             break;
           }
@@ -96,12 +107,15 @@ class DataSource {
           }
           continue;
         }
-        if (hit.t - end > 5 * 60 * 1000 || hit.o == r.price) {
+        final double? entryPrice = auto ? ent?.o : r.price;
+        if (entryPrice == null ||
+            hit.t - end > 5 * 60 * 1000 ||
+            hit.o == entryPrice) {
           await HistoryDb.setResult(r.id!, 'UNVERIFIED', hit.t, hit.o);
           continue;
         }
         final up = r.direction == 'UP';
-        final win = up ? hit.o > r.price! : hit.o < r.price!;
+        final win = up ? hit.o > entryPrice : hit.o < entryPrice;
         await HistoryDb.setResult(r.id!, win ? 'WIN' : 'LOSS', hit.t, hit.o);
       }
     } catch (_) {}
