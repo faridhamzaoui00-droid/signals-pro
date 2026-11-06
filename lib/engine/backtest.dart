@@ -111,7 +111,15 @@ class BtStore {
 }
 
 class Backtest {
-  static const tfMin = {'M1': 1, 'M5': 5, 'M15': 15, 'M30': 30};
+  static const tfMin = {
+    'M1': 1,
+    'M2': 2,
+    'M3': 3,
+    'M5': 5,
+    'M10': 10,
+    'M15': 15,
+    'M30': 30,
+  };
 
   static List<Candle> _agg(List<Candle> m1, int min, int skew) {
     final ms = min * 60000;
@@ -150,7 +158,7 @@ class Backtest {
 
     var maxMin = 1;
     for (final t in tfs) {
-      final m = tfMin[t]!;
+      final m = tfMin[t] ?? 1;
       if (m > maxMin) maxMin = m;
     }
     final warm = 130 * maxMin;
@@ -159,7 +167,7 @@ class Backtest {
 
     status('0 / $total');
     final f = await PoClient.I.deepHistory(sym, total, (n) {
-      status('${n} / $total');
+      status('$n / $total');
     });
     if (f.data == null) return Fetch<BtResult>(null, f.error ?? 'na_source_error');
     if (cancelled()) return const Fetch<BtResult>(null, 'bt_cancel');
