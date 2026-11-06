@@ -12,12 +12,32 @@ class Cfg {
   static double rsiUp = 52;
   static double rsiDown = 48;
   static double adxMin = 20;
+
+  static bool useEma = true;
+  static bool useRsi = true;
+  static bool useAdx = true;
+  static bool useSt = true;
+  static bool useCandle = true;
+  static bool useSr = true;
+  static bool autoTf = true;
+  static List<String> tfs = <String>['M1', 'M5', 'M15'];
+
   static bool _loaded = false;
+
+  static const allTfs = ['M1', 'M2', 'M3', 'M5', 'M10', 'M15', 'M30'];
+  static const _tfMin = {
+    'M1': 1, 'M2': 2, 'M3': 3, 'M5': 5, 'M10': 10, 'M15': 15, 'M30': 30,
+  };
+  static int tfMinutes(String t) => _tfMin[t] ?? 0;
 
   static const keys = [
     'ema1', 'ema2', 'rsiP', 'rsiUp', 'rsiDown', 'adxP', 'adxMin',
     'stP', 'stM', 'atrP', 'minScore',
+    'useEma', 'useRsi', 'useAdx', 'useSt', 'useCandle', 'useSr', 'autoTf', 'tfs',
   ];
+
+  static bool get anyOn =>
+      useEma || useRsi || useAdx || useSt || useCandle || useSr;
 
   static int _ci(int v, int lo, int hi) => v < lo ? lo : (v > hi ? hi : v);
   static double _cd(double v, double lo, double hi) =>
@@ -47,12 +67,29 @@ class Cfg {
         return '$atrP';
       case 'minScore':
         return '$minScore';
+      case 'useEma':
+        return useEma ? '1' : '0';
+      case 'useRsi':
+        return useRsi ? '1' : '0';
+      case 'useAdx':
+        return useAdx ? '1' : '0';
+      case 'useSt':
+        return useSt ? '1' : '0';
+      case 'useCandle':
+        return useCandle ? '1' : '0';
+      case 'useSr':
+        return useSr ? '1' : '0';
+      case 'autoTf':
+        return autoTf ? '1' : '0';
+      case 'tfs':
+        return tfs.join(',');
     }
     return '';
   }
 
   static void set(String k, String raw) {
-    final s = raw.trim().replaceAll(',', '.');
+    final s0 = raw.trim();
+    final s = s0.replaceAll(',', '.');
     final i = int.tryParse(s);
     final d = double.tryParse(s);
     switch (k) {
@@ -89,7 +126,60 @@ class Cfg {
       case 'minScore':
         if (i != null) minScore = _ci(i, 1, 10);
         break;
+      case 'useEma':
+        useEma = s0 != '0';
+        break;
+      case 'useRsi':
+        useRsi = s0 != '0';
+        break;
+      case 'useAdx':
+        useAdx = s0 != '0';
+        break;
+      case 'useSt':
+        useSt = s0 != '0';
+        break;
+      case 'useCandle':
+        useCandle = s0 != '0';
+        break;
+      case 'useSr':
+        useSr = s0 != '0';
+        break;
+      case 'autoTf':
+        autoTf = s0 != '0';
+        break;
+      case 'tfs':
+        final l = s0
+            .split(',')
+            .map((e) => e.trim())
+            .where((e) => _tfMin.containsKey(e))
+            .toSet()
+            .toList();
+        l.sort((a, b) => _tfMin[a]!.compareTo(_tfMin[b]!));
+        tfs = l.isEmpty ? <String>['M5'] : l;
+        break;
     }
+  }
+
+  static void presetOriginal() {
+    useEma = true;
+    useRsi = true;
+    useAdx = true;
+    useSt = true;
+    useCandle = true;
+    useSr = true;
+    autoTf = true;
+    tfs = <String>['M1', 'M5', 'M15'];
+  }
+
+  static void presetEmaRsi() {
+    useEma = true;
+    useRsi = true;
+    useAdx = false;
+    useSt = false;
+    useCandle = false;
+    useSr = false;
+    autoTf = false;
+    tfs = <String>['M5'];
   }
 
   static Future<void> load() async {
@@ -101,6 +191,7 @@ class Cfg {
         final v = p.getString('cfg_$k');
         if (v != null) set(k, v);
       }
+      if (!anyOn) presetOriginal();
     } catch (_) {}
   }
 
@@ -125,10 +216,31 @@ class Cfg {
     rsiDown = 48;
     adxMin = 20;
     minScore = 8;
+    presetOriginal();
     await save();
   }
 
-  static String summary() =>
-      'EMA $ema1/$ema2 • RSI $rsiP ($rsiDown/$rsiUp) • ADX $adxP >$adxMin • '
-      'ST $stP×$stM • ATR $atrP • ≥$minScore';
+  static String summary() {
+    final on = <String>[];
+    if (useEma) on.add('EMA $ema1/$ema2');
+    if (useRsi) on.add('RSI $rsiP ($rsiDown/$rsiUp)');
+    if (useAdx) on.add('ADX $adxP >$adxMin');
+    if (useSt) on.add('ST $stP×$stM');
+    if (useCandle) on.add('Candles');
+    if (useSr) on.add('S/R');
+    final tf = autoTf ? 'auto' : tfs.join('+');
+    return '${on.join(' • ')} | TF $tf | ≥$minScore/10';
+  }
+
+  static String activeLine() {
+    final on = <String>[];
+    if (useEma) on.add('EMA');
+    if (useRsi) on.add('RSI');
+    if (useAdx) on.add('ADX');
+    if (useSt) on.add('ST');
+    if (useCandle) on.add('Candles');
+    if (useSr) on.add('S/R');
+    final tf = autoTf ? 'Auto' : tfs.join('+');
+    return '${on.join(' + ')}  •  $tf';
+  }
 }
