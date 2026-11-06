@@ -41,14 +41,12 @@ class EngineResult {
 }
 
 class _Snap {
-  final int dir;
   final double price, atr, ema20, ema50, rsi, adx, lastBody;
   final int st;
   final bool lastBull, lastBear;
   final CandleInfo ci;
   final LevelInfo lv;
   const _Snap({
-    required this.dir,
     required this.price,
     required this.atr,
     required this.ema20,
@@ -62,18 +60,44 @@ class _Snap {
     required this.ci,
     required this.lv,
   });
+
+  // اتجاه الإطار حسب العناصر المفعّلة (يجب أن تتفق كلها)
+  int get dir {
+    final votes = <int>[];
+    if (Cfg.useEma) {
+      votes.add(ema20 > ema50 ? 1 : (ema20 < ema50 ? -1 : 0));
+    }
+    if (Cfg.useSt) votes.add(st);
+    if (votes.isEmpty && Cfg.useRsi) {
+      votes.add(rsi > 50 ? 1 : (rsi < 50 ? -1 : 0));
+    }
+    if (votes.isEmpty) votes.add(lastBull ? 1 : (lastBear ? -1 : 0));
+    final f = votes.first;
+    for (final v in votes) {
+      if (v != f) return 0;
+    }
+    return f;
+  }
 }
 
 class Strategy {
   static const tfMs = {
     'M1': 60000,
+    'M2': 120000,
+    'M3': 180000,
     'M5': 300000,
+    'M10': 600000,
     'M15': 900000,
     'M30': 1800000,
   };
 
   static List<String> tfsFor(int sec) {
     if (sec < 60) return [];
+    if (!Cfg.autoTf) {
+      final l = Cfg.tfs.where((t) => tfMs.containsKey(t)).toList();
+      l.sort((a, b) => tfMs[a]!.compareTo(tfMs[b]!));
+      return l.isEmpty ? ['M5'] : l;
+    }
     if (sec <= 120) return ['M1', 'M5'];
     if (sec <= 300) return ['M1', 'M5', 'M15'];
     if (sec <= 540) return ['M5', 'M15'];
@@ -112,11 +136,7 @@ class Strategy {
       return null;
     }
     final last = c.last;
-    int dir = 0;
-    if (e20 > e50 && st == 1) dir = 1;
-    if (e20 < e50 && st == -1) dir = -1;
     return _Snap(
-      dir: dir,
       price: last.c,
       atr: a,
       ema20: e20,
@@ -177,72 +197,108 @@ class Strategy {
           tMs: nowMs,
         );
 
-    final d = e.ema20 > e.ema50 ? 1 : (e.ema20 < e.ema50 ? -1 : 0);
+    // اتجاه الصفقة من أول عنصر مفعّل: EMA ثم SuperTrend ثم RSI ثم لون الشمعة
+    int d;
+    if (Cfg.useEma) {
+      d = e.ema20 > e.ema50 ? 1 : (e.ema20 < e.ema50 ? -1 : 0);
+    } else if (Cfg.useSt) {
+      d = e.st;
+    } else if (Cfg.useRsi) {
+      d = e.rsi > 50 ? 1 : (e.rsi < 50 ? -1 : 0);
+    } else {
+      d = e.lastBull ? 1 : (e.lastBear ? -1 : 0);
+    }
     if (d == 0) return wait([const Reason('blk_sideways')], 0);
 
     final fails = <Reason>[];
     final oks = <Reason>[];
-    var score = 0;
+    var earned = 0;
+    var possible = 0;
 
-    score += 1;
-    oks.add(const Reason('ok_ema'));
-
-    final rsiOk = d == 1 ? e.rsi > Cfg.rsiUp : e.rsi < Cfg.rsiDown;
-    if (rsiOk) {
-      score += 1;
-      oks.add(const Reason('ok_rsi'));
-    } else {
-      fails.add(Reason('blk_rsi', e.rsi.toStringAsFixed(1)));
+    if (Cfg.useEma) {
+      possible += 1;
+      earned += 1;
+      oks.add(const Reason('ok_ema'));
     }
 
-    final adxOk = e.adx > Cfg.adxMin;
-    if (adxOk) {
-      score += 1;
-      oks.add(const Reason('ok_adx'));
-    } else {
-      fails.add(Reason('blk_adx', e.adx.toStringAsFixed(1)));
+    if (Cfg.useRsi) {
+      possible += 1;
+      final ok = d == 1 ? e.rsi > Cfg.rsiUp : e.rsi < Cfg.rsiDown;
+      if (ok) {
+        earned += 1;
+        oks.add(const Reason('ok_rsi'));
+      } else {
+        fails.add(Reason('blk_rsi', e.rsi.toStringAsFixed(1)));
+      }
     }
 
-    final stOk = e.st == d;
-    if (stOk) {
-      score += 1;
-      oks.add(const Reason('ok_st'));
-    } else {
-      fails.add(const Reason('blk_st'));
+    if (Cfg.useAdx) {
+      possible += 1;
+      if (e.adx > Cfg.adxMin) {
+        earned += 1;
+        oks.add(const Reason('ok_adx'));
+      } else {
+        fails.add(Reason('blk_adx', e.adx.toStringAsFixed(1)));
+      }
     }
 
-    if ((e.ema20 - e.ema50).abs() < 0.1 * e.atr) {
+    if (Cfg.useSt) {
+      possible += 1;
+      if (e.st == d) {
+        earned += 1;
+        oks.add(const Reason('ok_st'));
+      } else {
+        fails.add(const Reason('blk_st'));
+      }
+    }
+
+    if (Cfg.useEma && (e.ema20 - e.ema50).abs() < 0.1 * e.atr) {
       fails.add(const Reason('blk_sideways'));
     }
 
-    final lastDirOk = d == 1 ? e.lastBull : e.lastBear;
-    if (!lastDirOk) fails.add(const Reason('blk_no_confirm'));
-    final strong = d == 1
-        ? (e.ci.bullEngulf || e.ci.momUp || e.ci.bullRej)
-        : (e.ci.bearEngulf || e.ci.momDown || e.ci.bearRej);
-    if (lastDirOk && strong) {
-      score += 2;
-      oks.add(const Reason('ok_candle'));
+    if (Cfg.useCandle) {
+      possible += 2;
+      final lastDirOk = d == 1 ? e.lastBull : e.lastBear;
+      if (!lastDirOk) fails.add(const Reason('blk_no_confirm'));
+      final strong = d == 1
+          ? (e.ci.bullEngulf || e.ci.momUp || e.ci.bullRej)
+          : (e.ci.bearEngulf || e.ci.momDown || e.ci.bearRej);
+      if (lastDirOk && strong) {
+        earned += 2;
+        oks.add(const Reason('ok_candle'));
+      }
     }
 
-    final zone = d == 1 ? e.lv.resistance : e.lv.support;
-    final dist = d == 1 ? e.lv.resistDistAtr : e.lv.supportDistAtr;
-    if (zone == null || dist == null || dist >= 1.5) {
-      score += 2;
-      oks.add(const Reason('ok_sr'));
-    } else if (dist >= 0.8) {
-      score += 1;
-      oks.add(const Reason('ok_sr_mid'));
-    } else if (zone.strong) {
-      fails.add(const Reason('blk_level_near'));
-    }
+    String srKey = 'sr_none';
+    if (Cfg.useSr) {
+      possible += 4;
+      final zone = d == 1 ? e.lv.resistance : e.lv.support;
+      final dist = d == 1 ? e.lv.resistDistAtr : e.lv.supportDistAtr;
+      if (zone == null || dist == null || dist >= 1.5) {
+        earned += 2;
+        oks.add(const Reason('ok_sr'));
+      } else if (dist >= 0.8) {
+        earned += 1;
+        oks.add(const Reason('ok_sr_mid'));
+      } else if (zone.strong) {
+        fails.add(const Reason('blk_level_near'));
+      }
 
-    final retest = d == 1
-        ? (e.lv.bullRetest || e.lv.bullRej || e.lv.bullFalseBreak)
-        : (e.lv.bearRetest || e.lv.bearRej || e.lv.bearFalseBreak);
-    if (retest) {
-      score += 2;
-      oks.add(const Reason('ok_retest'));
+      final retest = d == 1
+          ? (e.lv.bullRetest || e.lv.bullRej || e.lv.bullFalseBreak)
+          : (e.lv.bearRetest || e.lv.bearRej || e.lv.bearFalseBreak);
+      if (retest) {
+        earned += 2;
+        oks.add(const Reason('ok_retest'));
+      }
+
+      final sp = e.lv.support;
+      final rz = e.lv.resistance;
+      if (d == 1 && sp != null) {
+        srKey = sp.strong ? 'sr_support_strong' : 'sr_support';
+      } else if (d == -1 && rz != null) {
+        srKey = rz.strong ? 'sr_res_strong' : 'sr_res';
+      }
     }
 
     for (final n in tfs.skip(1)) {
@@ -256,7 +312,7 @@ class Strategy {
       }
     }
 
-    if ((e.price - e.ema20).abs() > 2.5 * e.atr) {
+    if (Cfg.useEma && (e.price - e.ema20).abs() > 2.5 * e.atr) {
       fails.add(const Reason('blk_extended'));
     }
 
@@ -272,23 +328,17 @@ class Strategy {
       fails.add(const Reason('blk_repeat'));
     }
 
-    final sp = e.lv.support;
-    final rz = e.lv.resistance;
-    String srKey = 'sr_none';
-    if (d == 1 && sp != null) {
-      srKey = sp.strong ? 'sr_support_strong' : 'sr_support';
-    } else if (d == -1 && rz != null) {
-      srKey = rz.strong ? 'sr_res_strong' : 'sr_res';
-    }
+    final score10 =
+        possible == 0 ? 0 : min(10, (earned * 10 / possible).round());
 
-    if (fails.isNotEmpty) return wait(fails, score, sr: srKey);
-    if (score < Cfg.minScore) {
-      return wait([Reason('wait_score', '$score')], score, sr: srKey);
+    if (fails.isNotEmpty) return wait(fails, score10, sr: srKey);
+    if (score10 < Cfg.minScore) {
+      return wait([Reason('wait_score', '$score10')], score10, sr: srKey);
     }
 
     return EngineResult(
       type: d == 1 ? 'UP' : 'DOWN',
-      score: min(score, 10),
+      score: score10,
       price: e.price,
       adx: e.adx,
       rsi: e.rsi,
