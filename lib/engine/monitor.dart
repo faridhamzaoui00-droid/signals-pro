@@ -12,6 +12,11 @@ import 'po_client.dart';
 import 'po_probe.dart';
 import 'strategy.dart';
 
+String _t(String ar, String fr, String en) {
+  final l = langNotifier.value;
+  return l == 'ar' ? ar : (l == 'fr' ? fr : en);
+}
+
 String _hm(int ms) {
   final d = DateTime.fromMillisecondsSinceEpoch(ms);
   String t(int v) => v.toString().padLeft(2, '0');
@@ -36,11 +41,21 @@ class Monitor {
 
   Timer? _timer;
   Timer? _resTimer;
+  Timer? _wd;
   bool _resBusy = false;
+  bool _wdBusy = false;
   int _lastBoundary = 0;
   int _nid = 1000;
   bool _busy = false;
   bool _loaded = false;
+
+  int _failCount = 0;
+  int _failCycles = 0;
+  int _lastAlert = 0;
+  int _lastReconnect = 0;
+  int _cycleDoneMs = 0;
+  int _startMs = 0;
+  bool _alerted = false;
 
   Future<void> load() async {
     if (_loaded) return;
@@ -55,7 +70,7 @@ class Monitor {
     if (p.getBool('mon_on') ?? false) await start();
   }
 
-  // حسم النتائج: يعمل دائماً، كل ثانية، حتى لو توقف التحليل التلقائي
+  // حسم النتائج: يعمل دائماً، كل ثانية
   void _startResolver() {
     _resTimer?.cancel();
     _resTimer = Timer.periodic(const Duration(seconds: 1), (_) => _resolveTick());
@@ -115,25 +130,110 @@ class Monitor {
     running.value = true;
     await _save(on: true);
     PoClient.I.connect();
-    final sNow = DateTime.now().millisecondsSinceEpoch + PoClient.I.offsetMs;
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final sNow = nowMs + PoClient.I.offsetMs;
     _lastBoundary = sNow ~/ 60000 * 60000;
+    _startMs = nowMs;
+    _cycleDoneMs = 0;
+    _failCycles = 0;
+    _alerted = false;
     await FgService.start(pairs.length);
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) => _onTick());
-    lines.value = [
-      '${_hm(DateTime.now().millisecondsSinceEpoch)}  ▶ ${t2('nt_running')}'
-    ];
+    _wd?.cancel();
+    _wd = Timer.periodic(const Duration(seconds: 20), (_) => _watch());
+    lines.value = ['${_hm(nowMs)}  ▶ ${t2('nt_running')}'];
     return null;
   }
 
   Future<void> stop() async {
     _timer?.cancel();
     _timer = null;
+    _wd?.cancel();
+    _wd = null;
     running.value = false;
     await _save(on: false);
     await FgService.stop();
   }
 
+  // ---------- الحارس والتنبيهات ----------
+  void _alert(String title, String body) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - _lastAlert < 900000) return;
+    _lastAlert = now;
+    _alerted = true;
+    Notifier.show(9001, title, body);
+  }
+
+  void _recovered() {
+    if (!_alerted) return;
+    _alerted = false;
+    Notifier.show(
+        9002,
+        _t('✅ عاد التحليل التلقائي للعمل', '✅ Analyse automatique rétablie',
+            '✅ Auto analysis is working again'),
+        _t('تم استئناف جلب البيانات والتحليل.', 'Le chargement des données a repris.',
+            'Data loading and analysis resumed.'));
+  }
+
+  Future<void> _watch() async {
+    if (!running.value || _wdBusy) return;
+    _wdBusy = true;
+    try {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final tfs = Strategy.tfsFor(duration);
+      final interval =
+          tfs.isEmpty ? 300000 : (Strategy.tfMs[tfs.first] ?? 300000);
+      final p = PoClient.I;
+      final lost = !p.connected.value;
+      final zombie = p.lastTickMs != 0 && now - p.lastTickMs > 90000;
+      if ((lost || zombie) && now - _lastReconnect > 60000) {
+        _lastReconnect = now;
+        final e = await p.reconnect();
+        p.lastTickMs = DateTime.now().millisecondsSinceEpoch;
+        if (e != null) {
+          _alert(
+              _t('⚠️ انقطع الاتصال بـ Pocket Option',
+                  '⚠️ Connexion à Pocket Option perdue',
+                  '⚠️ Connection to Pocket Option lost'),
+              _t('تعذرت إعادة الاتصال. قد يكون مفتاح الجلسة (SSID) منتهياً، انسخ مفتاحاً جديداً من المنصة وألصقه في الإعدادات.',
+                  "La reconnexion a échoué. La clé de session (SSID) est peut-être expirée : copiez-en une nouvelle depuis la plateforme.",
+                  'Reconnection failed. The session key (SSID) may have expired: copy a fresh one from the platform and paste it in Settings.'));
+        }
+      }
+      final ref = _cycleDoneMs == 0 ? _startMs : _cycleDoneMs;
+      if (now - ref > interval * 2 + 120000) {
+        _alert(
+            _t('⚠️ التحليل التلقائي متوقف', '⚠️ Analyse automatique arrêtée',
+                '⚠️ Auto analysis stalled'),
+            _t('لم تكتمل أي دورة تحليل منذ ${(now - ref) ~/ 60000} دقيقة. افتح التطبيق وتحقق من الاتصال.',
+                "Aucun cycle d'analyse terminé depuis ${(now - ref) ~/ 60000} min. Ouvrez l'application et vérifiez la connexion.",
+                'No analysis cycle completed for ${(now - ref) ~/ 60000} min. Open the app and check the connection.'));
+      }
+    } catch (_) {
+    } finally {
+      _wdBusy = false;
+    }
+  }
+
+  Future<void> _onFailCycle() async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - _lastReconnect > 60000) {
+      _lastReconnect = now;
+      await PoClient.I.reconnect();
+      PoClient.I.lastTickMs = DateTime.now().millisecondsSinceEpoch;
+    }
+    if (_failCycles >= 2) {
+      _alert(
+          _t('⚠️ التحليل التلقائي لا يتلقى بيانات', '⚠️ Aucune donnée reçue',
+              '⚠️ Auto analysis is not receiving data'),
+          _t('تعذر جلب البيانات من Pocket Option لدورتين متتاليتين. جرّب إعادة الاتصال من الإعدادات، وإن استمر فانسخ SSID جديداً.',
+              "Impossible de récupérer les données de Pocket Option sur 2 cycles. Essayez Reconnecter dans les Paramètres, sinon copiez un nouveau SSID.",
+              'Could not fetch data from Pocket Option for 2 cycles in a row. Try Reconnect in Settings, otherwise copy a fresh SSID.'));
+    }
+  }
+
+  // ---------- دورة التحليل ----------
   void _onTick() {
     if (_busy || !running.value) return;
     final sNow = DateTime.now().millisecondsSinceEpoch + PoClient.I.offsetMs;
@@ -154,6 +254,7 @@ class Monitor {
       final tfMs = Strategy.tfMs[tfs.first]!;
       if (b % tfMs != 0) return;
       lastCycle = DateTime.now();
+      _failCount = 0;
       var hist = <SignalRecord>[];
       try {
         hist = await HistoryDb.all();
@@ -167,6 +268,14 @@ class Monitor {
         lines.value = List<String>.from(out);
       }
       lines.value = List<String>.from(out);
+      _cycleDoneMs = DateTime.now().millisecondsSinceEpoch;
+      if (pairs.isNotEmpty && _failCount >= pairs.length) {
+        _failCycles++;
+        await _onFailCycle();
+      } else {
+        _failCycles = 0;
+        _recovered();
+      }
     } catch (_) {}
   }
 
@@ -175,6 +284,10 @@ class Monitor {
     final data = <String, List<Candle>>{};
     for (final tf in tfs) {
       var f = await DataSource.candles(pair, tf, 0, size: 220);
+      if (f.data == null) {
+        await Future.delayed(const Duration(seconds: 2));
+        f = await DataSource.candles(pair, tf, 0, size: 220);
+      }
       if (tf == tfs.first && f.data != null) {
         final expected = b - tfMs - PoClient.I.offsetMs;
         var fresh = false;
@@ -189,10 +302,14 @@ class Monitor {
           if (f.data == null) break;
         }
         if (f.data != null && !fresh) {
+          _failCount++;
           return '$pair: ${t2('data_stale', tf)}';
         }
       }
-      if (f.data == null) return '$pair: ${t2(f.error ?? 'na_source_error')}';
+      if (f.data == null) {
+        _failCount++;
+        return '$pair: ${t2(f.error ?? 'na_source_error')}';
+      }
       data[tf] = f.data!;
     }
 
