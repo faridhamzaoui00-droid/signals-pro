@@ -5,6 +5,9 @@ import 'po_client.dart';
 
 export 'po_client.dart' show Fetch;
 
+typedef ResolvedCb = void Function(
+    SignalRecord rec, String result, double? entry, double? exit);
+
 class DataSource {
   static const _s = FlutterSecureStorage();
   static const _per = {
@@ -68,56 +71,115 @@ class DataSource {
     return PoClient.I.candles(_sym(label), p, count: size);
   }
 
-  /// يحسم الصفقات المعلقة من شموع Pocket Option نفسها بعد انتهاء مدتها.
-  /// التعادل أو غياب البيانات = UNVERIFIED وليس خسارة.
-  static Future<void> resolvePending() async {
+  // ---------- حسم الصفقات ----------
+  static final Set<int> _busy = <int>{};
+  static final Map<int, int> _nextTry = <int, int>{};
+  static bool _running = false;
+
+  static int _endOf(SignalRecord r) {
+    final secs = int.tryParse(r.duration) ?? 0;
+    final auto = r.indicators.startsWith('[AUTO]');
+    return auto
+        ? (r.endAt ?? r.issuedAt + secs * 1000)
+        : r.issuedAt + secs * 1000;
+  }
+
+  static void _retry(int id, int age) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final wait = age < 30000 ? 1500 : (age < 300000 ? 5000 : 30000);
+    _nextTry[id] = now + wait;
+  }
+
+  static Future<void> resolvePending() => resolveDue();
+
+  /// يحسم كل صفقة انتهت مدتها منذ ثانيتين أو أكثر من شموع Pocket Option.
+  static Future<void> resolveDue({ResolvedCb? onResolved}) async {
+    if (_running) return;
+    _running = true;
     try {
       final all = await HistoryDb.all();
       final now = DateTime.now().millisecondsSinceEpoch;
-      var done = 0;
+      final due = <SignalRecord>[];
       for (final r in all) {
-        if (done >= 3) break;
         if (r.result != 'PENDING' || r.id == null) continue;
-        final auto = r.indicators.startsWith('[AUTO]');
-        final secs = int.tryParse(r.duration) ?? 0;
-        final end = auto
-            ? (r.endAt ?? r.issuedAt + secs * 1000)
-            : r.issuedAt + secs * 1000;
-        if (now < end + 90000) continue;
-        if (!auto && r.price == null) {
-          await HistoryDb.setResult(r.id!, 'UNVERIFIED', null, null);
-          continue;
-        }
-        done++;
-        final f = await candles(r.pair, 'M1', now, size: 300);
-        if (f.data == null) continue;
-        final entryMs = end - secs * 1000;
-        Candle? hit;
-        Candle? ent;
-        for (final c in f.data!) {
-          if (ent == null && auto && (c.t - entryMs).abs() <= 5000) ent = c;
-          if (c.t >= end - 5000) {
-            hit = c;
-            break;
-          }
-        }
-        if (hit == null) {
-          if (now - end > 6 * 3600 * 1000) {
-            await HistoryDb.setResult(r.id!, 'UNVERIFIED', null, null);
-          }
-          continue;
-        }
-        final double? entryPrice = auto ? ent?.o : r.price;
-        if (entryPrice == null ||
-            hit.t - end > 5 * 60 * 1000 ||
-            hit.o == entryPrice) {
-          await HistoryDb.setResult(r.id!, 'UNVERIFIED', hit.t, hit.o);
-          continue;
-        }
-        final up = r.direction == 'UP';
-        final win = up ? hit.o > entryPrice : hit.o < entryPrice;
-        await HistoryDb.setResult(r.id!, win ? 'WIN' : 'LOSS', hit.t, hit.o);
+        if (now < _endOf(r) + 2000) continue;
+        if (now < (_nextTry[r.id!] ?? 0)) continue;
+        due.add(r);
       }
-    } catch (_) {}
+      due.sort((a, b) => _endOf(a).compareTo(_endOf(b)));
+      for (final r in due.take(8)) {
+        await _resolveOne(r, onResolved);
+      }
+    } catch (_) {
+    } finally {
+      _running = false;
+    }
+  }
+
+  static Future<void> _resolveOne(SignalRecord r, ResolvedCb? cb) async {
+    final id = r.id!;
+    if (!_busy.add(id)) return;
+    try {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final auto = r.indicators.startsWith('[AUTO]');
+      final secs = int.tryParse(r.duration) ?? 0;
+      final end = _endOf(r);
+      final entryMs = end - secs * 1000;
+      final age = now - end;
+      var size = age ~/ 60000 + 10;
+      if (size < 20) size = 20;
+      if (size > 900) size = 900;
+
+      final f = await candles(r.pair, 'M1', now, size: size);
+      if (f.data == null) {
+        if (age > 6 * 3600 * 1000) {
+          await HistoryDb.setResult(id, 'UNVERIFIED', null, null);
+          cb?.call(r, 'UNVERIFIED', null, null);
+        } else {
+          _retry(id, age);
+        }
+        return;
+      }
+      Candle? ent;
+      Candle? atEnd;
+      Candle? before;
+      for (final c in f.data!) {
+        if ((c.t - entryMs).abs() <= 5000) ent = c;
+        if ((c.t - end).abs() <= 5000) atEnd = c;
+        if ((c.t - (end - 60000)).abs() <= 5000) before = c;
+      }
+      final double? entryPrice = auto ? ent?.o : r.price;
+      double? exitPrice;
+      int? exitT;
+      if (atEnd != null) {
+        exitPrice = atEnd.o;
+        exitT = atEnd.t;
+      } else if (before != null && before.closed) {
+        exitPrice = before.c;
+        exitT = before.t + 60000;
+      }
+      if (entryPrice == null || exitPrice == null) {
+        if (age > 6 * 3600 * 1000) {
+          await HistoryDb.setResult(id, 'UNVERIFIED', null, null);
+          cb?.call(r, 'UNVERIFIED', entryPrice, exitPrice);
+        } else {
+          _retry(id, age);
+        }
+        return;
+      }
+      if (exitPrice == entryPrice) {
+        await HistoryDb.setResult(id, 'UNVERIFIED', exitT, exitPrice);
+        cb?.call(r, 'UNVERIFIED', entryPrice, exitPrice);
+        return;
+      }
+      final up = r.direction == 'UP';
+      final win = up ? exitPrice > entryPrice : exitPrice < entryPrice;
+      final res = win ? 'WIN' : 'LOSS';
+      await HistoryDb.setResult(id, res, exitT, exitPrice);
+      cb?.call(r, res, entryPrice, exitPrice);
+    } catch (_) {
+    } finally {
+      _busy.remove(id);
+    }
   }
 }
