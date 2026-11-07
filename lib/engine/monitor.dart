@@ -35,6 +35,8 @@ class Monitor {
   DateTime? lastCycle;
 
   Timer? _timer;
+  Timer? _resTimer;
+  bool _resBusy = false;
   int _lastBoundary = 0;
   int _nid = 1000;
   bool _busy = false;
@@ -49,7 +51,40 @@ class Monitor {
     duration = p.getInt('mon_dur') ?? 300;
     lead = p.getInt('mon_lead') ?? 60;
     await Notifier.init();
+    _startResolver();
     if (p.getBool('mon_on') ?? false) await start();
+  }
+
+  // حسم النتائج: يعمل دائماً، كل ثانية، حتى لو توقف التحليل التلقائي
+  void _startResolver() {
+    _resTimer?.cancel();
+    _resTimer = Timer.periodic(const Duration(seconds: 1), (_) => _resolveTick());
+  }
+
+  Future<void> _resolveTick() async {
+    if (_resBusy) return;
+    _resBusy = true;
+    try {
+      await DataSource.resolveDue(onResolved: (rec, res, en, ex) {
+        changed.value++;
+        _notifyResult(rec, res, en, ex);
+      });
+    } catch (_) {
+    } finally {
+      _resBusy = false;
+    }
+  }
+
+  void _notifyResult(SignalRecord r, String res, double? en, double? ex) {
+    if (!r.indicators.startsWith('[AUTO]')) return;
+    final icon = res == 'WIN' ? '✅' : (res == 'LOSS' ? '❌' : '➖');
+    final label = res == 'WIN'
+        ? tr('res_win')
+        : (res == 'LOSS' ? tr('res_loss') : tr('res_unv'));
+    final title = '$icon $label  ${r.pair}';
+    final body = '${r.direction}  •  ${en ?? '—'} → ${ex ?? '—'}  •  '
+        '${durText(int.tryParse(r.duration) ?? 0)}';
+    Notifier.show(_nid++, title, body);
   }
 
   Future<void> _save({bool? on}) async {
@@ -188,7 +223,6 @@ class Monitor {
         (h.endAt ?? 0) > now);
     if (dup) return '$pair: ${r.type} (${t2('sg_live')})';
 
-    // الدخول: أقرب افتتاح دقيقة بعد انتهاء التحليل (+ دقيقة إن اخترت)
     final sNow = now + PoClient.I.offsetMs;
     final nextB = (sNow ~/ 60000 + 1) * 60000;
     final entryServer = nextB + (lead >= 60 ? 60000 : 0);
