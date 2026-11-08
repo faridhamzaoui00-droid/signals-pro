@@ -11,6 +11,11 @@ const _red = Color(0xFFFF4B5C);
 const _amber = Color(0xFFFFB020);
 const _grey = Color(0xFF7C8BA8);
 
+String _t(String ar, String fr, String en) {
+  final l = langNotifier.value;
+  return l == 'ar' ? ar : (l == 'fr' ? fr : en);
+}
+
 class SignalRecord {
   final int? id;
   final String pair, market, direction, duration, indicators, reasons, result;
@@ -105,6 +110,17 @@ class HistoryDb {
         'signals', {'result': result, 'endAt': endAt, 'endPrice': endPrice},
         where: 'id = ?', whereArgs: [id]);
   }
+
+  static Future<void> deleteIds(List<int> ids) async {
+    if (ids.isEmpty) return;
+    final d = await _open();
+    for (var i = 0; i < ids.length; i += 400) {
+      final end = i + 400 > ids.length ? ids.length : i + 400;
+      final chunk = ids.sublist(i, end);
+      final marks = List.filled(chunk.length, '?').join(',');
+      await d.delete('signals', where: 'id IN ($marks)', whereArgs: chunk);
+    }
+  }
 }
 
 String _resultLabel(String r) {
@@ -152,6 +168,8 @@ class _HistoryPageState extends State<HistoryPage> {
   bool loading = true;
   String filter = 'all';
   String query = '';
+  bool selectMode = false;
+  final Set<int> sel = <int>{};
 
   Map<String, String> get filters => {
         'all': tr('f_all'),
@@ -201,6 +219,66 @@ class _HistoryPageState extends State<HistoryPage> {
           r.pair.toLowerCase().contains(query.toLowerCase());
       return okFilter && okQuery;
     }).toList();
+  }
+
+  void _toggle(SignalRecord r) {
+    final id = r.id;
+    if (id == null) return;
+    setState(() {
+      if (sel.contains(id)) {
+        sel.remove(id);
+      } else {
+        sel.add(id);
+      }
+    });
+  }
+
+  void _exitSel() {
+    setState(() {
+      selectMode = false;
+      sel.clear();
+    });
+  }
+
+  void _selectAll() {
+    setState(() {
+      sel.addAll(shown.where((r) => r.id != null).map((r) => r.id!));
+    });
+  }
+
+  Future<void> _confirmDelete() async {
+    final n = sel.length;
+    if (n == 0) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _card,
+        title: Text(_t('حذف الصفقات', 'Supprimer les trades', 'Delete trades')),
+        content: Text(_t(
+            'سيتم حذف $n صفقة نهائياً ولا يمكن التراجع، وستُعاد حسبة الإحصائيات من الصفقات المتبقية.',
+            '$n trade(s) seront supprimés définitivement, sans retour possible. Les statistiques seront recalculées.',
+            '$n trade(s) will be permanently deleted, with no undo. Statistics will be recalculated.')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(_t('إلغاء', 'Annuler', 'Cancel')),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(_t('حذف', 'Supprimer', 'Delete'),
+                style: const TextStyle(color: _red)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await HistoryDb.deleteIds(sel.toList());
+    } catch (_) {}
+    if (!mounted) return;
+    sel.clear();
+    selectMode = false;
+    await _load();
   }
 
   Widget _stat(String label, String value, Color c) {
@@ -288,18 +366,36 @@ class _HistoryPageState extends State<HistoryPage> {
   Widget _tile(SignalRecord r) {
     final up = r.direction == 'UP';
     final c = _resultColor(r.result);
+    final isSel = r.id != null && sel.contains(r.id);
     return InkWell(
-      onTap: () => _details(r),
+      onTap: () {
+        if (selectMode) {
+          _toggle(r);
+        } else {
+          _details(r);
+        }
+      },
+      onLongPress: () {
+        setState(() => selectMode = true);
+        _toggle(r);
+      },
       borderRadius: BorderRadius.circular(16),
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 5),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: _card,
+          color: isSel ? _blue.withOpacity(0.18) : _card,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: _line.withOpacity(0.6)),
+          border: Border.all(
+              color: isSel ? _blue : _line.withOpacity(0.6),
+              width: isSel ? 2 : 1),
         ),
         child: Row(children: [
+          if (selectMode) ...[
+            Icon(isSel ? Icons.check_circle : Icons.radio_button_unchecked,
+                color: isSel ? _blue : Colors.white38),
+            const SizedBox(width: 8),
+          ],
           Icon(up ? Icons.north_east : Icons.south_east,
               color: up ? _green : _red, size: 30),
           const SizedBox(width: 10),
@@ -333,6 +429,37 @@ class _HistoryPageState extends State<HistoryPage> {
     );
   }
 
+  Widget _selBar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFF071230),
+        border: Border(top: BorderSide(color: _line.withOpacity(0.6))),
+      ),
+      child: Row(children: [
+        Expanded(
+          child: Text(
+              '${sel.length} ${_t('محددة', 'sélectionnés', 'selected')}',
+              style: const TextStyle(fontWeight: FontWeight.bold)),
+        ),
+        TextButton(
+          onPressed: _selectAll,
+          child: Text(_t('تحديد الكل', 'Tout sélectionner', 'Select all')),
+        ),
+        TextButton(
+          onPressed: _exitSel,
+          child: Text(_t('إلغاء', 'Annuler', 'Cancel')),
+        ),
+        ElevatedButton(
+          onPressed: sel.isEmpty ? null : _confirmDelete,
+          style: ElevatedButton.styleFrom(
+              backgroundColor: _red, foregroundColor: Colors.white),
+          child: Text(_t('حذف', 'Supprimer', 'Delete')),
+        ),
+      ]),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final wins = items.where((r) => r.result == 'WIN').length;
@@ -343,13 +470,31 @@ class _HistoryPageState extends State<HistoryPage> {
         ? '—'
         : '${(wins * 100 / decided).toStringAsFixed(1)}%';
     final list = shown;
-    return ListView(
+    final body = ListView(
       padding: const EdgeInsets.fromLTRB(12, 16, 12, 16),
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: Text(tr('hist_title'),
-              style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
+          child: Row(children: [
+            Expanded(
+              child: Text(tr('hist_title'),
+                  style: const TextStyle(
+                      fontSize: 26, fontWeight: FontWeight.bold)),
+            ),
+            IconButton(
+              tooltip: _t('تحديد وحذف', 'Sélectionner et supprimer',
+                  'Select and delete'),
+              onPressed: () {
+                if (selectMode) {
+                  _exitSel();
+                } else {
+                  setState(() => selectMode = true);
+                }
+              },
+              icon: Icon(selectMode ? Icons.close : Icons.checklist,
+                  color: selectMode ? _red : _blue),
+            ),
+          ]),
         ),
         const SizedBox(height: 8),
         Row(children: [
@@ -407,5 +552,9 @@ class _HistoryPageState extends State<HistoryPage> {
           for (final r in list) _tile(r),
       ],
     );
+    return Column(children: [
+      Expanded(child: body),
+      if (selectMode) _selBar(),
+    ]);
   }
 }
