@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../history_page.dart';
 import '../l10n.dart';
 import '../l10n2.dart';
+import '../pairs.dart';
 import 'cfg.dart';
 import 'datasource.dart';
 import 'indicators.dart';
@@ -62,7 +63,7 @@ class Monitor {
     _loaded = true;
     await Cfg.load();
     final p = await SharedPreferences.getInstance();
-    pairs = p.getStringList('mon_pairs') ?? <String>[];
+    pairs = migratePairs(p.getStringList('mon_pairs') ?? <String>[]);
     duration = p.getInt('mon_dur') ?? 300;
     lead = p.getInt('mon_lead') ?? 60;
     await Notifier.init();
@@ -351,7 +352,7 @@ class Monitor {
         '${r.tf.entries.map((e) => '${e.key}${_arr(e.value)}').join(' ')}';
     final rec = SignalRecord(
       pair: pair,
-      market: 'OTC',
+      market: isOtcPair(pair) ? 'OTC' : 'REG',
       direction: r.type,
       duration: '$duration',
       indicators: ind,
