@@ -20,7 +20,8 @@ class DataSource {
     'M30': 1800,
   };
 
-  static String _sym(String label) => label.replaceAll(' OTC', '_otc');
+  static String _sym(String label) =>
+      label.replaceAll('/', '').replaceAll(' OTC', '_otc');
   static String _label(String sym) => sym.replaceAll('_otc', ' OTC');
 
   static Future<String?> key() async {
