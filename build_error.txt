@@ -1,33 +1,19 @@
 === DART ERRORS ===
-102:lib/engine/monitor.dart:49:11: Error: The getter 'Notifier' isn't defined for the type 'Monitor'.
-107:lib/engine/monitor.dart:68:13: Error: The getter 'FgService' isn't defined for the type 'Monitor'.
-112:lib/engine/monitor.dart:69:13: Error: The getter 'FgService' isn't defined for the type 'Monitor'.
-117:lib/engine/monitor.dart:80:5: Error: 'PoClient' is imported from both 'package:signals_pro/engine/notify.dart' and 'package:signals_pro/engine/po_client.dart'.
-120:lib/engine/monitor.dart:81:58: Error: 'PoClient' is imported from both 'package:signals_pro/engine/notify.dart' and 'package:signals_pro/engine/po_client.dart'.
-123:lib/engine/monitor.dart:83:11: Error: The getter 'FgService' isn't defined for the type 'Monitor'.
-128:lib/engine/monitor.dart:97:11: Error: The getter 'FgService' isn't defined for the type 'Monitor'.
-133:lib/engine/monitor.dart:102:58: Error: 'PoClient' is imported from both 'package:signals_pro/engine/notify.dart' and 'package:signals_pro/engine/po_client.dart'.
-136:lib/engine/monitor.dart:142:37: Error: 'PoClient' is imported from both 'package:signals_pro/engine/notify.dart' and 'package:signals_pro/engine/po_client.dart'.
-139:lib/engine/monitor.dart:190:35: Error: 'PoClient' is imported from both 'package:signals_pro/engine/notify.dart' and 'package:signals_pro/engine/po_client.dart'.
-142:lib/engine/monitor.dart:217:11: Error: The getter 'Notifier' isn't defined for the type 'Monitor'.
-147:lib/notify_page.dart:50:13: Error: The getter 'Notifier' isn't defined for the type '_NotifyPageState'.
-152:lib/notify_page.dart:195:23: Error: The getter 'Notifier' isn't defined for the type '_NotifyPageState'.
-157:lib/notify_page.dart:206:23: Error: The getter 'Notifier' isn't defined for the type '_NotifyPageState'.
-162:lib/notify_page.dart:217:19: Error: The getter 'Notifier' isn't defined for the type '_NotifyPageState'.
+102:lib/main.dart:154:13: Error: Not a constant expression.
 === GRADLE ===
-172:* What went wrong:
-173-Execution failed for task ':app:compileFlutterBuildRelease'.
-174-> Process 'command '/opt/hostedtoolcache/flutter/stable-3.47.9-x64/flutter/bin/flutter'' finished with non-zero exit value 1
-175-
-176-* Try:
-177-> Run with --stacktrace option to get the stack trace.
-178-> Run with --info or --debug option to get more log output.
-179-> Run with --scan to get full insights from a Build Scan (powered by Develocity).
-180-> Get more help at https://help.gradle.org.
-181-
-182-BUILD FAILED in 2m 24s
-183-Running Gradle task 'assembleRelease'...                          145.3s
-184-Gradle task assembleRelease failed with exit code 1
+110:* What went wrong:
+111-Execution failed for task ':app:compileFlutterBuildRelease' (registered by plugin 'com.android.internal.application').
+112-> Process 'command '/opt/hostedtoolcache/flutter/stable-3.50.0-x64/flutter/bin/flutter'' finished with non-zero exit value 1
+113-
+114-* Try:
+115-> Run with --stacktrace option to get the stack trace.
+116-> Run with --info or --debug option to get more log output.
+117-> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+118-> Get more help at https://help.gradle.org.
+119-
+120-BUILD FAILED in 3m 54s
+121-Running Gradle task 'assembleRelease'...                          235.3s
+122-Gradle task assembleRelease failed with exit code 1
 === OTHER ===
 101:If you are a plugin author, please migrate your plugin to Built-in Kotlin using this guide: https://docs.flutter.dev/release/breaking-changes/migrate-to-built-in-kotlin/for-plugin-authors
-173:Execution failed for task ':app:compileFlutterBuildRelease'.
+111:Execution failed for task ':app:compileFlutterBuildRelease' (registered by plugin 'com.android.internal.application').
