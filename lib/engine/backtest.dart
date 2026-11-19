@@ -152,7 +152,7 @@ class Backtest {
     required bool Function() cancelled,
   }) async {
     await Cfg.load();
-    final sym = label.replaceAll(' OTC', '_otc');
+    final sym = label.replaceAll('/', '').replaceAll(' OTC', '_otc');
     final tfs = Strategy.tfsFor(duration);
     if (tfs.isEmpty) return const Fetch<BtResult>(null, 'na_duration');
 
