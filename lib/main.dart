@@ -10,6 +10,7 @@ import 'l10n.dart';
 import 'l10n2.dart';
 import 'notify_page.dart';
 import 'pair_sheet.dart';
+import 'selection_store.dart'; // حفظ الاختيارات
 import 'settings_page.dart';
 import 'signals_page.dart';
 import 'strategy_page.dart';
@@ -275,12 +276,23 @@ class _HomePageState extends State<HomePage> {
       if (mounted) setState(() {});
     });
     DataSource.resolvePending();
+    _restoreSelection(); // حفظ الاختيارات
   }
 
   @override
   void dispose() {
     langNotifier.removeListener(_onLang);
     super.dispose();
+  }
+
+  // حفظ الاختيارات: استعادة آخر زوج ومدة اختارهما المستخدم
+  Future<void> _restoreSelection() async {
+    final s = await SelectionStore.load();
+    if (!mounted || preview) return;
+    setState(() {
+      if (pair == null && s.pair != null) pair = s.pair;
+      if (s.duration != null) duration = s.duration!;
+    });
   }
 
   String get market => pair == null
@@ -306,6 +318,7 @@ class _HomePageState extends State<HomePage> {
         updated = '--:--:--';
       }
     });
+    if (!preview) _restoreSelection(); // حفظ الاختيارات
   }
 
   Future<void> pickPair() async {
@@ -321,6 +334,7 @@ class _HomePageState extends State<HomePage> {
       preview = false;
       current = null;
     });
+    SelectionStore.savePair(r); // حفظ الاختيارات
   }
 
   void pickDuration() {
@@ -335,6 +349,7 @@ class _HomePageState extends State<HomePage> {
                 d == duration ? const Icon(Icons.check, color: kGreen) : null,
             onTap: () {
               setState(() => duration = d);
+              SelectionStore.saveDuration(d); // حفظ الاختيارات
               Navigator.pop(context);
             },
           ),
