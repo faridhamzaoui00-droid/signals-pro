@@ -20,6 +20,10 @@ dependencies:
   flutter_local_notifications: ^17.2.4
   flutter_foreground_task: ^8.10.0
 
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
 flutter:
   uses-material-design: true
   assets:
