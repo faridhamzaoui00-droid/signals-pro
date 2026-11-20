@@ -1,19 +1,19 @@
 === DART ERRORS ===
-102:lib/main.dart:154:13: Error: Not a constant expression.
+102:lib/main.dart:154:7: Error: The method 'SettingsPage' isn't defined for the type '_ShellState'.
 === GRADLE ===
-110:* What went wrong:
-111-Execution failed for task ':app:compileFlutterBuildRelease' (registered by plugin 'com.android.internal.application').
-112-> Process 'command '/opt/hostedtoolcache/flutter/stable-3.50.0-x64/flutter/bin/flutter'' finished with non-zero exit value 1
-113-
-114-* Try:
-115-> Run with --stacktrace option to get the stack trace.
-116-> Run with --info or --debug option to get more log output.
-117-> Run with --scan to get full insights from a Build Scan (powered by Develocity).
-118-> Get more help at https://help.gradle.org.
-119-
-120-BUILD FAILED in 3m 54s
-121-Running Gradle task 'assembleRelease'...                          235.3s
-122-Gradle task assembleRelease failed with exit code 1
+112:* What went wrong:
+113-Execution failed for task ':app:compileFlutterBuildRelease' (registered by plugin 'com.android.internal.application').
+114-> Process 'command '/opt/hostedtoolcache/flutter/stable-3.50.1-x64/flutter/bin/flutter'' finished with non-zero exit value 1
+115-
+116-* Try:
+117-> Run with --stacktrace option to get the stack trace.
+118-> Run with --info or --debug option to get more log output.
+119-> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+120-> Get more help at https://help.gradle.org.
+121-
+122-BUILD FAILED in 3m 1s
+123-Running Gradle task 'assembleRelease'...                          182.0s
+124-Gradle task assembleRelease failed with exit code 1
 === OTHER ===
 101:If you are a plugin author, please migrate your plugin to Built-in Kotlin using this guide: https://docs.flutter.dev/release/breaking-changes/migrate-to-built-in-kotlin/for-plugin-authors
-111:Execution failed for task ':app:compileFlutterBuildRelease' (registered by plugin 'com.android.internal.application').
+113:Execution failed for task ':app:compileFlutterBuildRelease' (registered by plugin 'com.android.internal.application').
