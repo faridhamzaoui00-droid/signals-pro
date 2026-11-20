@@ -150,11 +150,11 @@ class _ShellState extends State<Shell> {
   Widget build(BuildContext context) {
     final pages = <Widget>[
       HomePage(onSettings: () => go(2)),
-      const HistoryPage(),
-      const SettingsPage(),
-      const InfoPage(),
-      const SignalsPage(),
-      const NotifyPage(),
+      HistoryPage(),
+      SettingsPage(),
+      InfoPage(),
+      SignalsPage(),
+      NotifyPage(),
     ];
     return Scaffold(
       body: Container(
