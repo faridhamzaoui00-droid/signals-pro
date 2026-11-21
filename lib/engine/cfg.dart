@@ -24,11 +24,24 @@ class Cfg {
 
   static bool _loaded = false;
 
-  static const allTfs = ['M1', 'M2', 'M3', 'M5', 'M10', 'M15', 'M30'];
-  static const _tfMin = {
-    'M1': 1, 'M2': 2, 'M3': 3, 'M5': 5, 'M10': 10, 'M15': 15, 'M30': 30,
+  static const allTfs = [
+    'S5', 'S10', 'S15', 'S30', 'M1', 'M2', 'M3', 'M5', 'M10', 'M15', 'M30',
+  ];
+  static const _tfSec = {
+    'S5': 5,
+    'S10': 10,
+    'S15': 15,
+    'S30': 30,
+    'M1': 60,
+    'M2': 120,
+    'M3': 180,
+    'M5': 300,
+    'M10': 600,
+    'M15': 900,
+    'M30': 1800,
   };
-  static int tfMinutes(String t) => _tfMin[t] ?? 0;
+  static int tfSeconds(String t) => _tfSec[t] ?? 0;
+  static int tfMinutes(String t) => (_tfSec[t] ?? 0) ~/ 60;
 
   static const keys = [
     'ema1', 'ema2', 'rsiP', 'rsiUp', 'rsiDown', 'adxP', 'adxMin',
@@ -151,10 +164,10 @@ class Cfg {
         final l = s0
             .split(',')
             .map((e) => e.trim())
-            .where((e) => _tfMin.containsKey(e))
+            .where((e) => _tfSec.containsKey(e))
             .toSet()
             .toList();
-        l.sort((a, b) => _tfMin[a]!.compareTo(_tfMin[b]!));
+        l.sort((a, b) => _tfSec[a]!.compareTo(_tfSec[b]!));
         tfs = l.isEmpty ? <String>['M5'] : l;
         break;
     }
