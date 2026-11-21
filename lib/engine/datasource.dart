@@ -11,6 +11,10 @@ typedef ResolvedCb = void Function(
 class DataSource {
   static const _s = FlutterSecureStorage();
   static const _per = {
+    'S5': 5,
+    'S10': 10,
+    'S15': 15,
+    'S30': 30,
     'M1': 60,
     'M2': 120,
     'M3': 180,
@@ -93,7 +97,16 @@ class DataSource {
 
   static Future<void> resolvePending() => resolveDue();
 
+  /// سعر فتح الشمعة (5 ثوانٍ) التي تحوي اللحظة ms.
+  static double? _openAt(List<Candle> l, int ms) {
+    for (final c in l) {
+      if (c.t <= ms && ms < c.t + 5000) return c.o;
+    }
+    return null;
+  }
+
   /// يحسم كل صفقة انتهت مدتها منذ ثانيتين أو أكثر من شموع Pocket Option.
+  /// صفقات أقل من دقيقة تنتظر 8 ثوانٍ لتكتمل شمعة الخروج، وتُحسم من شموع 5 ثوانٍ.
   static Future<void> resolveDue({ResolvedCb? onResolved}) async {
     if (_running) return;
     _running = true;
@@ -103,7 +116,9 @@ class DataSource {
       final due = <SignalRecord>[];
       for (final r in all) {
         if (r.result != 'PENDING' || r.id == null) continue;
-        if (now < _endOf(r) + 2000) continue;
+        final secsR = int.tryParse(r.duration) ?? 0;
+        final grace = (secsR > 0 && secsR < 60) ? 8000 : 2000;
+        if (now < _endOf(r) + grace) continue;
         if (now < (_nextTry[r.id!] ?? 0)) continue;
         due.add(r);
       }
@@ -127,6 +142,38 @@ class DataSource {
       final end = _endOf(r);
       final entryMs = end - secs * 1000;
       final age = now - end;
+
+      // ---- صفقات أقل من دقيقة: الحسم من شموع 5 ثوانٍ ----
+      if (secs > 0 && secs < 60) {
+        var n5 = age ~/ 5000 + 40;
+        if (n5 > 280) n5 = 280;
+        final f5 = await candles(r.pair, 'S5', now, size: n5);
+        final l5 = f5.data;
+        final double? entryP =
+            auto ? (l5 == null ? null : _openAt(l5, entryMs)) : r.price;
+        final double? exitP = l5 == null ? null : _openAt(l5, end);
+        if (entryP == null || exitP == null) {
+          if (age > 6 * 3600 * 1000) {
+            await HistoryDb.setResult(id, 'UNVERIFIED', null, null);
+            cb?.call(r, 'UNVERIFIED', entryP, exitP);
+          } else {
+            _retry(id, age);
+          }
+          return;
+        }
+        if (exitP == entryP) {
+          await HistoryDb.setResult(id, 'UNVERIFIED', end, exitP);
+          cb?.call(r, 'UNVERIFIED', entryP, exitP);
+          return;
+        }
+        final upS = r.direction == 'UP';
+        final winS = upS ? exitP > entryP : exitP < entryP;
+        final resS = winS ? 'WIN' : 'LOSS';
+        await HistoryDb.setResult(id, resS, end, exitP);
+        cb?.call(r, resS, entryP, exitP);
+        return;
+      }
+
       var size = age ~/ 60000 + 10;
       if (size < 20) size = 20;
       if (size > 900) size = 900;
