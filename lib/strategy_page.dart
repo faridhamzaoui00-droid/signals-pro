@@ -173,21 +173,29 @@ class _StrategyPageState extends State<StrategyPage> {
                       'Original table: 1-2 min M1+M5 • 3-5 min +M15 • 6-9 min M5+M15 • 10-15 min M5+M15+M30'),
                   style: const TextStyle(fontSize: 11, color: Colors.white54)),
             ),
+            if (Cfg.autoTf) ...[
+              const SizedBox(height: 4),
+              Text(
+                  _t('للمدد الأقصر من دقيقة (5 و10 و15 و30 ثانية): عطّل «تلقائي» واختر فريم ثوانٍ يدوياً.',
+                      "Pour les durées sous 1 min (5, 10, 15, 30 s) : désactivez « Automatique » et choisissez un cadre en secondes.",
+                      'For durations under 1 minute (5, 10, 15, 30 s): turn off Automatic and pick a seconds timeframe.'),
+                  style: const TextStyle(fontSize: 12, color: _amber)),
+            ],
             if (!Cfg.autoTf) ...[
               const SizedBox(height: 6),
               Wrap(spacing: 8, runSpacing: 4, children: [
                 for (final t in Cfg.allTfs)
                   FilterChip(
-                    label: Text('$t • ${durText(Cfg.tfMinutes(t) * 60)}'),
+                    label: Text('$t • ${durText(Cfg.tfSeconds(t))}'),
                     selected: Cfg.tfs.contains(t),
                     onSelected: (v) => _toggleTf(t, v),
                   ),
               ]),
               const SizedBox(height: 6),
               Text(
-                  _t('أصغر فريم تختاره هو فريم الدخول والتأكيد، والأكبر منه للتوافق. ومدة الصفقة مستقلة عنها، وتختارها من الرئيسية.',
-                      "Le plus petit cadre choisi sert à l'entrée et à la confirmation, les plus grands à la concordance. La durée du trade est indépendante.",
-                      'The smallest chosen timeframe is the entry/confirmation frame, larger ones are for agreement. Trade duration is independent.'),
+                  _t('أصغر فريم تختاره هو فريم الدخول والتأكيد، والأكبر منه للتوافق. ومدة الصفقة مستقلة عنها، وتختارها من الرئيسية. فريمات الثواني للتحليل اليدوي فقط، ولا يدعمها الاختبار التاريخي.',
+                      "Le plus petit cadre choisi sert à l'entrée et à la confirmation, les plus grands à la concordance. La durée du trade est indépendante. Les cadres en secondes sont pour l'analyse manuelle uniquement, sans test historique.",
+                      'The smallest chosen timeframe is the entry/confirmation frame, larger ones are for agreement. Trade duration is independent. Seconds timeframes are for manual analysis only, with no backtest.'),
                   style: const TextStyle(fontSize: 12, color: Colors.white54)),
             ],
           ]),
