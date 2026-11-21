@@ -13,6 +13,8 @@ import 'pair_sheet.dart';
 import 'selection_store.dart'; // حفظ الاختيارات
 import 'settings_page.dart';
 import 'signals_page.dart';
+import 'strat/runner.dart'; // الاستراتيجيات
+import 'strategies_page.dart'; // الاستراتيجيات
 import 'strategy_page.dart';
 
 const kBg1 = Color(0xFF030A1F);
@@ -153,6 +155,7 @@ class _ShellState extends State<Shell> {
     super.initState();
     langNotifier.addListener(_onLang);
     Monitor.I.load();
+    StratRunner.I.load(); // الاستراتيجيات
   }
 
   @override
@@ -170,6 +173,7 @@ class _ShellState extends State<Shell> {
       InfoPage(),
       SignalsPage(),
       NotifyPage(),
+      StrategiesPage(),
     ];
     return Scaffold(
       body: Container(
@@ -188,7 +192,7 @@ class _ShellState extends State<Shell> {
 
   Widget _navItem(int i, IconData icon, String label) {
     final sel = tab == i;
-    final double pad = sel ? 6 : 3;
+    final double pad = sel ? 5 : 2;
     return Expanded(
       child: InkWell(
         onTap: () => go(i),
@@ -216,16 +220,16 @@ class _ShellState extends State<Shell> {
                     )
                   : null,
               child: Icon(icon,
-                  size: 24, color: sel ? Colors.white : const Color(0xFF8FB0E8)),
+                  size: 22, color: sel ? Colors.white : const Color(0xFF8FB0E8)),
             ),
             const SizedBox(height: 2),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 1),
               child: FittedBox(
                 fit: BoxFit.scaleDown,
                 child: Text(label,
                     style: TextStyle(
-                        fontSize: 12,
+                        fontSize: 11,
                         fontWeight: sel ? FontWeight.bold : FontWeight.normal,
                         color: sel ? kCyan : const Color(0xFF8FB0E8))),
               ),
@@ -237,6 +241,9 @@ class _ShellState extends State<Shell> {
   }
 
   Widget _navBar() {
+    final lg = langNotifier.value;
+    final stratLabel =
+        lg == 'ar' ? 'الاستراتيجيات' : (lg == 'fr' ? 'Stratégies' : 'Strategies');
     return Container(
       decoration: BoxDecoration(
         color: const Color(0xFF071230),
@@ -251,6 +258,7 @@ class _ShellState extends State<Shell> {
             _navItem(2, Icons.settings, tr('nav_settings')),
             _navItem(0, Icons.home, tr('nav_home')),
             _navItem(4, Icons.bolt, t2('nav_signals')),
+            _navItem(6, Icons.psychology, stratLabel),
             _navItem(5, Icons.notifications_active, t2('nav_notify')),
             _navItem(3, Icons.info_outline, tr('nav_info')),
           ]),
@@ -372,11 +380,13 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  // نسبة النجاح الحقيقية للاستراتيجية الحالية فقط (دون إشارات الاستراتيجيات الجديدة)
   double? _winRate(List<SignalRecord> all, String p, int dur) {
     final d = all
         .where((r) =>
             r.pair == p &&
             r.duration == '$dur' &&
+            !r.indicators.contains('[STRAT:') &&
             (r.result == 'WIN' || r.result == 'LOSS'))
         .toList();
     if (d.length < 30) return null;
