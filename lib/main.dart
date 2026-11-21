@@ -47,13 +47,28 @@ Color tcolor(String t) {
 
 Color dark(Color c, double k) => Color.lerp(Colors.black, c, k)!;
 
+// نص السبب. رسالة المدة الأقصر من دقيقة تشرح ما يجب فعله.
+String _reasonText(String key, [String? v]) {
+  if (key == 'na_duration') {
+    final l = langNotifier.value;
+    if (l == 'ar') {
+      return 'المدد الأقصر من دقيقة تحتاج فريم ثوانٍ: افتح «الاستراتيجية» وعطّل «تلقائي» واختر فريماً (S5 أو S10 أو S15 أو S30)';
+    }
+    if (l == 'fr') {
+      return "Les durées sous 1 min exigent un cadre en secondes : ouvrez « Stratégie », désactivez « Automatique » et choisissez S5, S10, S15 ou S30";
+    }
+    return 'Durations under 1 minute need a seconds timeframe: open “Strategy”, turn off Automatic and pick S5, S10, S15 or S30';
+  }
+  return t2(key, v);
+}
+
 String rtext(String enc) {
   return enc
       .split(';')
       .where((e) => e.isNotEmpty)
       .map((e) {
         final p = e.split('|');
-        return t2(p[0], p.length > 1 ? p[1] : null);
+        return _reasonText(p[0], p.length > 1 ? p[1] : null);
       })
       .join(' • ');
 }
@@ -254,7 +269,7 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   static const durations = [
-    30, 60, 120, 180, 240, 300, 360, 420, 480, 540, 600, 660, 720, 780, 840, 900,
+    5, 10, 15, 30, 60, 120, 180, 240, 300, 360, 420, 480, 540, 600, 660, 720, 780, 840, 900,
   ];
   int duration = 300;
   String? pair;
