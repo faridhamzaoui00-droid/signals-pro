@@ -154,7 +154,10 @@ class Backtest {
     await Cfg.load();
     final sym = label.replaceAll('/', '').replaceAll(' OTC', '_otc');
     final tfs = Strategy.tfsFor(duration);
-    if (tfs.isEmpty) return const Fetch<BtResult>(null, 'na_duration');
+    // الاختبار التاريخي يبني الفريمات من شموع الدقيقة، فلا يدعم فريمات الثواني.
+    if (tfs.isEmpty || tfs.any((t) => !tfMin.containsKey(t))) {
+      return const Fetch<BtResult>(null, 'na_duration');
+    }
 
     var maxMin = 1;
     for (final t in tfs) {
