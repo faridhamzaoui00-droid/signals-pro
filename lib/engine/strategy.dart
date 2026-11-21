@@ -82,6 +82,10 @@ class _Snap {
 
 class Strategy {
   static const tfMs = {
+    'S5': 5000,
+    'S10': 10000,
+    'S15': 15000,
+    'S30': 30000,
     'M1': 60000,
     'M2': 120000,
     'M3': 180000,
@@ -92,12 +96,14 @@ class Strategy {
   };
 
   static List<String> tfsFor(int sec) {
-    if (sec < 60) return [];
+    if (sec < 5) return [];
     if (!Cfg.autoTf) {
       final l = Cfg.tfs.where((t) => tfMs.containsKey(t)).toList();
       l.sort((a, b) => tfMs[a]!.compareTo(tfMs[b]!));
       return l.isEmpty ? ['M5'] : l;
     }
+    // الجدول التلقائي للمدد من دقيقة فأكثر. الأقل من دقيقة يحتاج اختيار الفريم يدوياً.
+    if (sec < 60) return [];
     if (sec <= 120) return ['M1', 'M5'];
     if (sec <= 300) return ['M1', 'M5', 'M15'];
     if (sec <= 540) return ['M5', 'M15'];
